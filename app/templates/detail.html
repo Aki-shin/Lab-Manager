@@ -56,11 +56,17 @@
                     <div class="d-grid gap-2">
                         {% if app.active_state == 'active' %}
                             <div class="btn-group">
-                                <a href="{{ url_for('main.service_action', name=app.name, action='restart') }}" class="btn btn-warning">🔄 Перезагрузить</a>
-                                <a href="{{ url_for('main.service_action', name=app.name, action='stop') }}" class="btn btn-danger">⏹ Стоп</a>
+                                <form action="{{ url_for('main.service_action', name=app.name, action='restart') }}" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-warning">🔄 Перезагрузить</button>
+                                </form>
+                                <form action="{{ url_for('main.service_action', name=app.name, action='stop') }}" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-danger">⏹ Стоп</button>
+                                </form>
                             </div>
                         {% else %}
-                            <a href="{{ url_for('main.service_action', name=app.name, action='start') }}" class="btn btn-success">▶ Запустить</a>
+                            <form action="{{ url_for('main.service_action', name=app.name, action='start') }}" method="post">
+                                <button type="submit" class="btn btn-success w-100">▶ Запустить</button>
+                            </form>
                             <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white">🐞 Запустить диагностику</a>
                         {% endif %}
                     </div>
@@ -77,7 +83,9 @@
                             <div id="collapseDel" class="accordion-collapse collapse" data-bs-parent="#accDelete">
                                 <div class="accordion-body">
                                     <p class="small">Это удалит .service файл, но <b>не удалит</b> файлы вашего кода.</p>
-                                    <a href="{{ url_for('main.delete_service', name=app.name) }}" class="btn btn-sm btn-outline-danger w-100" onclick="return confirm('Вы уверены, что хотите удалить сервис?')">Удалить конфигурацию</a>
+                                    <form action="{{ url_for('main.delete_service', name=app.name) }}" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить сервис?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger w-100">Удалить конфигурацию</button>
+                                    </form>
                                 </div>
                             </div>
                         </div>
@@ -94,7 +102,7 @@
                 <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-xs btn-outline-light btn-sm" style="font-size: 0.7em;">Обновить</a>
             </div>
             <div class="card-body bg-dark p-0">
-                <div class="terminal">{% if logs %}{{ logs }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
+                <div class="terminal">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
             </div>
         </div>
     </div>

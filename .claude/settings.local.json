@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_.Path -like ''*git*'' -or $_.Path -like ''*GitHub*'' } | Format-Table Id, ProcessName, Path -AutoSize\")",
+      "Bash(powershell -Command \"Stop-Process -Id 9204 -Force -ErrorAction SilentlyContinue; Stop-Process -Id 9840 -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Remove-Item -Force ''C:\\\\Users\\\\tempest\\\\Desktop\\\\Lab Manager\\\\.git\\\\index.lock'' -ErrorAction SilentlyContinue; Write-Host ''done''\")",
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_.Path -like ''*git*'' } | Format-Table Id, ProcessName, Path -AutoSize\")"
+    ]
+  }
+}
