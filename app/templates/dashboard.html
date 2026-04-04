@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Список приложений{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">Ваши приложения</h4>
+        <span class="badge bg-light text-dark border">Папка: ~/apps</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Имя</th>
+                    <th>Статус</th>
+                    <th>Порт</th>
+                    <th class="text-end">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for app in apps %}
+                <tr style="cursor: pointer;" data-href="{{ url_for('main.app_detail', name=app.name) }}" onclick="window.location.href=this.dataset.href">
+                    <td class="fw-bold">{{ app.name }}</td>
+                    <td>
+                        {% if app.has_service %}
+                            {% if app.active_state == 'active' %}
+                                <span class="badge bg-success">● Active</span>
+                            {% elif app.active_state == 'failed' %}
+                                <span class="badge bg-danger">● Failed</span>
+                            {% else %}
+                                <span class="badge bg-secondary">● Stopped</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-warning text-dark">Не установлен</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if app.assigned_port %}
+                            <span class="font-monospace text-muted">{{ app.assigned_port }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-sm btn-outline-primary">Управление →</a>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="text-center py-5 text-muted">Папка <code>~/apps</code> пуста. Создайте папки с проектами.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

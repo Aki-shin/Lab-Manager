@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Инструкция разработчика{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            
+            <div class="card shadow-sm mb-5 border-primary">
+                <div class="card-body">
+                    <h2 class="card-title text-primary mb-3">🚀 Центр разработки</h2>
+                    <p class="lead">Создавайте микросервисы правильно. Соблюдайте различия между путями к файлам (Backend) и ссылками (Frontend).</p>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header bg-dark text-white fw-bold">📋 4 Железных правила</div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item px-0">
+                                    <h6 class="fw-bold text-danger">1. Файлы и БД (Python) → Абсолютные</h6>
+                                    <p class="small text-muted mb-0">
+                                        Systemd может менять рабочую папку.
+                                        <br><code>BASE_DIR = os.path.dirname(os.path.abspath(__file__))</code>
+                                        <br><code>db_path = os.path.join(BASE_DIR, 'data.db')</code>
+                                    </p>
+                                </li>
+                                <li class="list-group-item px-0">
+                                    <h6 class="fw-bold text-success">2. Ссылки и Fetch (JS/HTML) → Относительные</h6>
+                                    <p class="small text-muted mb-0">
+                                        Приложение работает за прокси (<code>/proxy/appname/</code>).
+                                        <br>❌ Нельзя: <code>fetch('/api/data')</code> (идет в корень)
+                                        <br>✅ Надо: <code>fetch('api/data')</code> (идет в папку приложения)
+                                    </p>
+                                </li>
+                                <li class="list-group-item px-0">
+                                    <h6 class="fw-bold">3. Хост и Порт</h6>
+                                    <p class="small text-muted mb-0">
+                                        Хост строго <code>127.0.0.1</code>.
+                                        <br>Порт из ENV: <code>os.environ.get('PORT')</code>.
+                                    </p>
+                                </li>
+                                <li class="list-group-item px-0">
+                                    <h6 class="fw-bold">4. Запрет Reload</h6>
+                                    <p class="small text-muted mb-0">
+                                        <code>app.run(..., debug=False, use_reloader=False)</code>
+                                    </p>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card h-100 shadow-sm border-success">
+                        <div class="card-header bg-success text-white fw-bold">
+                            🤖 Исправленный Генератор (Промпт)
+                        </div>
+                        <div class="card-body bg-light">
+                            <p class="small">Этот промпт теперь учит нейросеть писать правильные <code>fetch</code> запросы без слеша в начале.</p>
+                            
+                            <div class="position-relative">
+                                <textarea id="aiPrompt" class="form-control font-monospace" rows="16" style="font-size: 0.75em; resize: none;">
+Ты — Senior Python Developer. Напиши веб-приложение на Flask для "Home Lab Manager".
+
+ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ (Backend):
+1. Файловая система: Используй ТОЛЬКО абсолютные пути.
+   - BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+   - DB_FILE = os.path.join(BASE_DIR, 'app.db')
+2. Запуск сервера:
+   - port = int(os.environ.get("PORT", 5000))
+   - host = "127.0.0.1"
+   - В app.run() ОБЯЗАТЕЛЬНО: debug=False, use_reloader=False.
+
+ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ (Frontend/JS):
+1. Приложение работает за Reverse Proxy.
+2. В JavaScript (fetch) и HTML (href/src) используй ТОЛЬКО ОТНОСИТЕЛЬНЫЕ пути (без слэша в начале).
+   - ❌ ПЛОХО: fetch('/api/get_data') — это уйдет в корень сервера.
+   - ✅ ХОРОШО: fetch('api/get_data') — это уйдет в /proxy/appname/api/get_data.
+   - ✅ ХОРОШО: &lt;script src="static/script.js"&gt;
+
+ЗАДАЧА ПРИЛОЖЕНИЯ:
+[ОПИШИ ИДЕЮ ЗДЕСЬ]
+                                </textarea>
+                                <button onclick="copyPrompt()" class="btn btn-primary btn-sm position-absolute bottom-0 end-0 m-2 shadow">
+                                    📋 Скопировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-4">
+                <div class="card-header">🛠 Пример: как работают пути</div>
+                <div class="card-body bg-dark p-0">
+<pre class="terminal text-white p-3 m-0" style="font-family: monospace;">
+# Backend (Python) - Абсолютные пути к файлам
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+conn = sqlite3.connect(os.path.join(BASE_DIR, 'base.db'))
+
+# Frontend (HTML/JS) - Относительные ссылки
+# Браузер сам подставит /proxy/appname/ перед api/users
+html = """
+&lt;script&gt;
+  // Обратите внимание: нет слэша перед 'api'
+  fetch('api/users')
+    .then(r => r.json())
+    .then(data => console.log(data));
+&lt;/script&gt;
+"""
+</pre>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+function copyPrompt() {
+    var copyText = document.getElementById("aiPrompt");
+    copyText.select();
+    copyText.setSelectionRange(0, 99999);
+    
+    try {
+        navigator.clipboard.writeText(copyText.value).then(function() {
+            alert("Промпт скопирован! Вставьте его в чат с нейросетью.");
+        });
+    } catch (err) {
+        document.execCommand('copy');
+        alert("Промпт скопирован!");
+    }
+}
+</script>
+{% endblock %}

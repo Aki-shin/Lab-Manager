@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Результат диагностики{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-warning">
+    <div class="card-header bg-warning text-dark">
+        <h4 class="mb-0">🐞 Результат диагностики: {{ name }}</h4>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            В ходе теста реальный сервис был остановлен. Менеджер попытался запустить приложение напрямую.
+        </div>
+        
+        <pre class="terminal p-3 fs-6">{{ report }}</pre>
+        
+        <div class="d-flex gap-2 mt-4">
+            <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">← Вернуться к приложению</a>
+            
+            </div>
+    </div>
+</div>
+{% endblock %}

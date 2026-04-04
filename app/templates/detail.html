@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ app.name }} - Управление{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{{ app.name }}</li>
+  </ol>
+</nav>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h3 class="card-title">{{ app.name }}</h3>
+                <p class="text-muted small font-monospace">{{ app.path }}</p>
+                <hr>
+                
+                {% if not app.has_service %}
+                    <div class="alert alert-secondary">
+                        <small>Systemd сервис отсутствует. Создайте его для запуска.</small>
+                    </div>
+                    
+                    <form action="{{ url_for('main.create_service', name=app.name) }}" method="post">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small">Порт (оставьте пустым для авто-выбора)</label>
+                            <input type="number" class="form-control form-control-sm" name="custom_port" placeholder="Auto (5001-6000)">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small">Команда запуска (опционально)</label>
+                            <input type="text" class="form-control form-control-sm" name="entry_cmd" placeholder="Напр: python3 app.py">
+                            <div class="form-text small">По умолчанию ищем venv или запускаем main.py</div>
+                        </div>
+                        <button class="btn btn-primary w-100">⚙️ Создать сервис</button>
+                    </form>
+
+                {% else %}
+                    <div class="mb-3 d-flex align-items-center justify-content-between">
+                        <span>Статус:</span> 
+                        {% if app.active_state == 'active' %}
+                            <span class="badge bg-success fs-6">Running</span>
+                        {% else %}
+                            <span class="badge bg-secondary fs-6">{{ app.active_state }}</span>
+                        {% endif %}
+                    </div>
+
+                    {% if app.assigned_port and app.active_state == 'active' %}
+                    <div class="d-grid gap-2 mb-3">
+                        <a href="/proxy/{{ app.name }}/" target="_blank" class="btn btn-success fw-bold py-2">
+                            🚀 Открыть приложение
+                        </a>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2">
+                        {% if app.active_state == 'active' %}
+                            <div class="btn-group">
+                                <a href="{{ url_for('main.service_action', name=app.name, action='restart') }}" class="btn btn-warning">🔄 Перезагрузить</a>
+                                <a href="{{ url_for('main.service_action', name=app.name, action='stop') }}" class="btn btn-danger">⏹ Стоп</a>
+                            </div>
+                        {% else %}
+                            <a href="{{ url_for('main.service_action', name=app.name, action='start') }}" class="btn btn-success">▶ Запустить</a>
+                            <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white">🐞 Запустить диагностику</a>
+                        {% endif %}
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="accordion" id="accDelete">
+                        <div class="accordion-item border-danger">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed text-danger" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDel">
+                                    🗑 Опасная зона
+                                </button>
+                            </h2>
+                            <div id="collapseDel" class="accordion-collapse collapse" data-bs-parent="#accDelete">
+                                <div class="accordion-body">
+                                    <p class="small">Это удалит .service файл, но <b>не удалит</b> файлы вашего кода.</p>
+                                    <a href="{{ url_for('main.delete_service', name=app.name) }}" class="btn btn-sm btn-outline-danger w-100" onclick="return confirm('Вы уверены, что хотите удалить сервис?')">Удалить конфигурацию</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span>📋 Логи (последние 50 строк)</span>
+                <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-xs btn-outline-light btn-sm" style="font-size: 0.7em;">Обновить</a>
+            </div>
+            <div class="card-body bg-dark p-0">
+                <div class="terminal">{% if logs %}{{ logs }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
