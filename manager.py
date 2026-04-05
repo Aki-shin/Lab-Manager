@@ -16,4 +16,5 @@ app = create_app()
 if __name__ == '__main__':
     port = int(os.getenv('MANAGER_PORT', 80))
     debug = os.getenv('FLASK_DEBUG', '0') == '1'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    # threaded=True нужен для SSE-стримов логов (параллельные соединения)
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Редактирование {{ name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.app_detail', name=name) }}">{{ name }}</a></li>
+    <li class="breadcrumb-item active">Редактирование</li>
+  </ol>
+</nav>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <h4 class="mb-0">✏️ Редактирование сервиса {{ name }}</h4>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info small">
+            Изменения будут применены автоматически. Если сервис был запущен — он перезапустится.
+        </div>
+
+        <form method="post">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label">Порт</label>
+                    <input type="number" class="form-control" name="port" value="{{ config.port or '' }}" min="1" max="65535" required>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Рабочая директория</label>
+                    <input type="text" class="form-control font-monospace" value="{{ config.cwd }}" disabled>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Команда запуска</label>
+                <input type="text" class="form-control font-monospace" name="entry_cmd" value="{{ config.cmd }}" required>
+                <div class="form-text small">Разрешены: a-z, 0-9, точка, слеш, подчёркивание, дефис, пробел.</div>
+            </div>
+
+            <hr>
+
+            <div class="mb-3">
+                <label class="form-label">Переменные окружения (кроме PORT/HOST)</label>
+                <div id="envList">
+                    {% for k, v in config.user_env.items() %}
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" class="form-control" name="env_key_{{ loop.index0 }}" value="{{ k }}" pattern="[A-Z_][A-Z0-9_]*">
+                        <input type="text" class="form-control" name="env_val_{{ loop.index0 }}" value="{{ v }}">
+                        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addEnvRow()">+ Добавить переменную</button>
+            </div>
+
+            <hr>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">💾 Сохранить изменения</button>
+                <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">Отмена</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let envIdx = {{ config.user_env|length }};
+function addEnvRow() {
+    const list = document.getElementById('envList');
+    const row = document.createElement('div');
+    row.className = 'input-group input-group-sm mb-2';
+    row.innerHTML = `
+        <input type="text" class="form-control" name="env_key_${envIdx}" placeholder="KEY" pattern="[A-Z_][A-Z0-9_]*">
+        <input type="text" class="form-control" name="env_val_${envIdx}" placeholder="value">
+        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">×</button>
+    `;
+    list.appendChild(row);
+    envIdx++;
+}
+</script>
+{% endblock %}

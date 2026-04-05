@@ -52,17 +52,31 @@ else
 fi
 
 # --- 2. Python venv ---
-if [ ! -d "$VENV_DIR" ]; then
-    info "Создаю виртуальное окружение..."
+# Проверяем валидность существующего venv (файлы в bin/ должны быть исполняемыми)
+VENV_VALID=0
+if [ -d "$VENV_DIR" ] && [ -x "$VENV_DIR/bin/python3" ] && [ -x "$VENV_DIR/bin/pip" ]; then
+    VENV_VALID=1
+fi
+
+if [ "$VENV_VALID" -eq 0 ]; then
+    if [ -d "$VENV_DIR" ]; then
+        warn "venv существует, но повреждён (нет exec-прав). Пересоздаю..."
+        rm -rf "$VENV_DIR"
+    else
+        info "Создаю виртуальное окружение..."
+    fi
     python3 -m venv "$VENV_DIR"
     ok "venv создан."
 else
-    ok "venv уже существует."
+    ok "venv уже существует и валиден."
 fi
 
+# На всякий случай проставляем exec-бит для всех файлов в bin/
+chmod +x "$VENV_DIR"/bin/* 2>/dev/null || true
+
 info "Устанавливаю pip-зависимости..."
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet -r "${PROJECT_DIR}/requirements.txt"
+"$VENV_DIR/bin/python3" -m pip install --quiet --upgrade pip
+"$VENV_DIR/bin/python3" -m pip install --quiet -r "${PROJECT_DIR}/requirements.txt"
 ok "Python-зависимости установлены."
 
 # --- 3. Файл .env ---

@@ -13,37 +13,80 @@
     <div class="col-md-5">
         <div class="card shadow-sm mb-4">
             <div class="card-body">
-                <h3 class="card-title">{{ app.name }}</h3>
+                <h3 class="card-title">
+                    {{ app.name }}
+                    {% if app.is_git %}<span class="badge bg-light text-dark border ms-2" style="font-size: 0.5em;">git</span>{% endif %}
+                </h3>
                 <p class="text-muted small font-monospace">{{ app.path }}</p>
                 <hr>
-                
+
                 {% if not app.has_service %}
                     <div class="alert alert-secondary">
                         <small>Systemd сервис отсутствует. Создайте его для запуска.</small>
                     </div>
-                    
+
                     <form action="{{ url_for('main.create_service', name=app.name) }}" method="post">
                         <div class="mb-3">
-                            <label class="form-label text-muted small">Порт (оставьте пустым для авто-выбора)</label>
+                            <label class="form-label text-muted small">Порт (пусто = авто)</label>
                             <input type="number" class="form-control form-control-sm" name="custom_port" placeholder="Auto (5001-6000)">
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-muted small">Команда запуска (опционально)</label>
-                            <input type="text" class="form-control form-control-sm" name="entry_cmd" placeholder="Напр: python3 app.py">
-                            <div class="form-text small">По умолчанию ищем venv или запускаем main.py</div>
+                            <input type="text" class="form-control form-control-sm" name="entry_cmd" placeholder="python3 app.py">
+                            <div class="form-text small">По умолчанию — venv + main.py/app.py</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small">Переменные окружения</label>
+                            <div id="envList"></div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="addEnvRow()">+ Добавить переменную</button>
                         </div>
                         <button class="btn btn-primary w-100">⚙️ Создать сервис</button>
                     </form>
 
                 {% else %}
                     <div class="mb-3 d-flex align-items-center justify-content-between">
-                        <span>Статус:</span> 
+                        <span>Статус:</span>
+                        <span>
                         {% if app.active_state == 'active' %}
                             <span class="badge bg-success fs-6">Running</span>
                         {% else %}
                             <span class="badge bg-secondary fs-6">{{ app.active_state }}</span>
                         {% endif %}
+                        {% if app.active_state == 'active' %}
+                            {% if app.health and app.health < 500 %}
+                                <span class="badge bg-success" title="HTTP {{ app.health }}">✓ HTTP {{ app.health }}</span>
+                            {% elif app.health %}
+                                <span class="badge bg-warning text-dark">⚠ HTTP {{ app.health }}</span>
+                            {% else %}
+                                <span class="badge bg-danger" title="Нет ответа">✗ no reply</span>
+                            {% endif %}
+                        {% endif %}
+                        </span>
                     </div>
+
+                    {% if app.resources %}
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body py-2">
+                            <div class="row text-center g-2 small">
+                                <div class="col-4">
+                                    <div class="text-muted">CPU</div>
+                                    <div class="fw-bold" id="metric-cpu">{{ app.resources.cpu }}%</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="text-muted">RAM</div>
+                                    <div class="fw-bold" id="metric-ram">{{ app.resources.ram_mb }} MB</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="text-muted">Uptime</div>
+                                    <div class="fw-bold" id="metric-uptime">{{ app.resources.uptime_str }}</div>
+                                </div>
+                            </div>
+                            {% if app.pid %}
+                            <div class="text-center text-muted mt-1" style="font-size: 0.7em;">PID: {{ app.pid }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
 
                     {% if app.assigned_port and app.active_state == 'active' %}
                     <div class="d-grid gap-2 mb-3">
@@ -56,23 +99,31 @@
                     <div class="d-grid gap-2">
                         {% if app.active_state == 'active' %}
                             <div class="btn-group">
-                                <form action="{{ url_for('main.service_action', name=app.name, action='restart') }}" method="post" class="d-inline">
-                                    <button type="submit" class="btn btn-warning">🔄 Перезагрузить</button>
+                                <form action="{{ url_for('main.service_action', name=app.name, action='restart') }}" method="post" class="d-inline flex-grow-1">
+                                    <button type="submit" class="btn btn-warning w-100">🔄 Перезагрузить</button>
                                 </form>
-                                <form action="{{ url_for('main.service_action', name=app.name, action='stop') }}" method="post" class="d-inline">
-                                    <button type="submit" class="btn btn-danger">⏹ Стоп</button>
+                                <form action="{{ url_for('main.service_action', name=app.name, action='stop') }}" method="post" class="d-inline flex-grow-1">
+                                    <button type="submit" class="btn btn-danger w-100">⏹ Стоп</button>
                                 </form>
                             </div>
                         {% else %}
                             <form action="{{ url_for('main.service_action', name=app.name, action='start') }}" method="post">
                                 <button type="submit" class="btn btn-success w-100">▶ Запустить</button>
                             </form>
-                            <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white">🐞 Запустить диагностику</a>
+                            <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white">🐞 Диагностика</a>
+                        {% endif %}
+
+                        <a href="{{ url_for('main.edit_service', name=app.name) }}" class="btn btn-outline-primary">✏️ Редактировать сервис</a>
+
+                        {% if app.is_git %}
+                        <form action="{{ url_for('main.git_pull', name=app.name) }}" method="post">
+                            <button type="submit" class="btn btn-outline-success w-100">⬇ git pull</button>
+                        </form>
                         {% endif %}
                     </div>
-                    
+
                     <hr>
-                    
+
                     <div class="accordion" id="accDelete">
                         <div class="accordion-item border-danger">
                             <h2 class="accordion-header">
@@ -82,8 +133,8 @@
                             </h2>
                             <div id="collapseDel" class="accordion-collapse collapse" data-bs-parent="#accDelete">
                                 <div class="accordion-body">
-                                    <p class="small">Это удалит .service файл, но <b>не удалит</b> файлы вашего кода.</p>
-                                    <form action="{{ url_for('main.delete_service', name=app.name) }}" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить сервис?')">
+                                    <p class="small">Удалит .service файл. Код в <code>{{ app.path }}</code> останется.</p>
+                                    <form action="{{ url_for('main.delete_service', name=app.name) }}" method="post" onsubmit="return confirm('Удалить сервис?')">
                                         <button type="submit" class="btn btn-sm btn-outline-danger w-100">Удалить конфигурацию</button>
                                     </form>
                                 </div>
@@ -98,13 +149,93 @@
     <div class="col-md-7">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span>📋 Логи (последние 50 строк)</span>
-                <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-xs btn-outline-light btn-sm" style="font-size: 0.7em;">Обновить</a>
+                <span>📋 Логи <span id="streamStatus" class="badge bg-secondary ms-2" style="font-size: 0.65em;">offline</span></span>
+                <div class="form-check form-switch text-white">
+                    <input class="form-check-input" type="checkbox" id="streamToggle" {% if app.has_service %}checked{% endif %}>
+                    <label class="form-check-label small" for="streamToggle">Live</label>
+                </div>
             </div>
             <div class="card-body bg-dark p-0">
-                <div class="terminal">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
+                <div class="terminal" id="logsBox">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+// --- Добавление полей env при создании ---
+let envIdx = 0;
+function addEnvRow() {
+    const list = document.getElementById('envList');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'input-group input-group-sm mb-2';
+    row.innerHTML = `
+        <input type="text" class="form-control" name="env_key_${envIdx}" placeholder="KEY" pattern="[A-Z_][A-Z0-9_]*">
+        <input type="text" class="form-control" name="env_val_${envIdx}" placeholder="value">
+        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">×</button>
+    `;
+    list.appendChild(row);
+    envIdx++;
+}
+
+{% if app.has_service %}
+// --- SSE live логи ---
+const logsBox = document.getElementById('logsBox');
+const streamStatus = document.getElementById('streamStatus');
+const streamToggle = document.getElementById('streamToggle');
+let eventSource = null;
+
+function startStream() {
+    if (eventSource) return;
+    logsBox.textContent = '';
+    eventSource = new EventSource('{{ url_for("main.logs_stream", name=app.name) }}');
+    streamStatus.className = 'badge bg-success ms-2';
+    streamStatus.textContent = 'live';
+
+    eventSource.onmessage = (e) => {
+        const line = document.createTextNode(e.data + '\n');
+        logsBox.appendChild(line);
+        // Ограничиваем буфер ~500 строк
+        while (logsBox.childNodes.length > 1000) {
+            logsBox.removeChild(logsBox.firstChild);
+        }
+        logsBox.scrollTop = logsBox.scrollHeight;
+    };
+    eventSource.onerror = () => {
+        streamStatus.className = 'badge bg-danger ms-2';
+        streamStatus.textContent = 'error';
+    };
+}
+
+function stopStream() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    streamStatus.className = 'badge bg-secondary ms-2';
+    streamStatus.textContent = 'offline';
+}
+
+streamToggle.addEventListener('change', (e) => {
+    if (e.target.checked) startStream(); else stopStream();
+});
+if (streamToggle.checked) startStream();
+
+// --- Авто-обновление метрик ---
+{% if app.active_state == 'active' %}
+setInterval(async () => {
+    try {
+        const r = await fetch('{{ url_for("main.api_app_metrics", name=app.name) }}');
+        const d = await r.json();
+        if (d.resources) {
+            document.getElementById('metric-cpu').textContent = d.resources.cpu + '%';
+            document.getElementById('metric-ram').textContent = d.resources.ram_mb + ' MB';
+            document.getElementById('metric-uptime').textContent = d.resources.uptime_str;
+        }
+    } catch (e) {}
+}, 5000);
+{% endif %}
+{% endif %}
+</script>
 {% endblock %}

@@ -3,10 +3,51 @@
 {% block title %}Список приложений{% endblock %}
 
 {% block content %}
-<div class="card shadow-sm">
+{% if system %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body py-3">
+        <div class="row text-center g-3">
+            <div class="col-md-3 col-6">
+                <div class="text-muted small">CPU</div>
+                <div class="fs-5 fw-bold">{{ system.cpu }}%</div>
+                <div class="progress" style="height: 4px;">
+                    <div class="progress-bar {% if system.cpu > 80 %}bg-danger{% elif system.cpu > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.cpu }}%"></div>
+                </div>
+                <div class="text-muted" style="font-size: 0.7em;">load: {{ system.load_avg|join(' ') }}</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-muted small">RAM</div>
+                <div class="fs-5 fw-bold">{{ system.ram_used_gb }} / {{ system.ram_total_gb }} GB</div>
+                <div class="progress" style="height: 4px;">
+                    <div class="progress-bar {% if system.ram_percent > 80 %}bg-danger{% elif system.ram_percent > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.ram_percent }}%"></div>
+                </div>
+                <div class="text-muted" style="font-size: 0.7em;">{{ system.ram_percent }}%</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-muted small">Диск /</div>
+                <div class="fs-5 fw-bold">{{ system.disk_used_gb }} / {{ system.disk_total_gb }} GB</div>
+                <div class="progress" style="height: 4px;">
+                    <div class="progress-bar {% if system.disk_percent > 80 %}bg-danger{% elif system.disk_percent > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.disk_percent }}%"></div>
+                </div>
+                <div class="text-muted" style="font-size: 0.7em;">{{ system.disk_percent }}%</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-muted small">Uptime</div>
+                <div class="fs-5 fw-bold">{{ system.uptime_str }}</div>
+                <div class="text-muted" style="font-size: 0.7em;">с момента загрузки</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <h4 class="mb-0">Ваши приложения</h4>
-        <span class="badge bg-light text-dark border">Папка: ~/apps</span>
+        <div>
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">📦 Загрузить ZIP</button>
+            <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">🔗 Git clone</button>
+        </div>
     </div>
     <div class="card-body p-0">
         <table class="table table-hover align-middle mb-0">
@@ -14,14 +55,21 @@
                 <tr>
                     <th>Имя</th>
                     <th>Статус</th>
+                    <th>Health</th>
                     <th>Порт</th>
+                    <th>CPU</th>
+                    <th>RAM</th>
+                    <th>Uptime</th>
                     <th class="text-end">Действия</th>
                 </tr>
             </thead>
             <tbody>
             {% for app in apps %}
-                <tr style="cursor: pointer;" data-href="{{ url_for('main.app_detail', name=app.name) }}" onclick="window.location.href=this.dataset.href">
-                    <td class="fw-bold">{{ app.name }}</td>
+                <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('main.app_detail', name=app.name) }}'">
+                    <td class="fw-bold">
+                        {{ app.name }}
+                        {% if app.is_git %}<span class="badge bg-light text-dark border" style="font-size: 0.65em;">git</span>{% endif %}
+                    </td>
                     <td>
                         {% if app.has_service %}
                             {% if app.active_state == 'active' %}
@@ -29,28 +77,134 @@
                             {% elif app.active_state == 'failed' %}
                                 <span class="badge bg-danger">● Failed</span>
                             {% else %}
-                                <span class="badge bg-secondary">● Stopped</span>
+                                <span class="badge bg-secondary">● {{ app.active_state }}</span>
                             {% endif %}
                         {% else %}
                             <span class="badge bg-warning text-dark">Не установлен</span>
                         {% endif %}
                     </td>
                     <td>
+                        {% if app.active_state == 'active' %}
+                            {% if app.health and app.health < 500 %}
+                                <span class="badge bg-success" title="HTTP {{ app.health }}">✓ {{ app.health }}</span>
+                            {% elif app.health %}
+                                <span class="badge bg-warning text-dark" title="HTTP {{ app.health }}">⚠ {{ app.health }}</span>
+                            {% else %}
+                                <span class="badge bg-danger" title="Нет ответа">✗</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         {% if app.assigned_port %}
                             <span class="font-monospace text-muted">{{ app.assigned_port }}</span>
                         {% else %}
-                            -
+                            <span class="text-muted">—</span>
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td>
+                        {% if app.resources %}
+                            <span class="font-monospace small">{{ app.resources.cpu }}%</span>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if app.resources %}
+                            <span class="font-monospace small">{{ app.resources.ram_mb }} MB</span>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if app.resources %}
+                            <span class="text-muted small">{{ app.resources.uptime_str }}</span>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td class="text-end" onclick="event.stopPropagation()">
                         <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-sm btn-outline-primary">Управление →</a>
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="4" class="text-center py-5 text-muted">Папка <code>~/apps</code> пуста. Создайте папки с проектами.</td></tr>
+                <tr><td colspan="8" class="text-center py-5 text-muted">Папка пуста. Загрузите архив или клонируйте git-репозиторий.</td></tr>
             {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- Модалка: загрузка zip -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('main.upload_app') }}" method="post" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">📦 Загрузить приложение (ZIP/TAR)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Имя приложения</label>
+                        <input type="text" class="form-control" name="name" pattern="[a-zA-Z0-9_.\-]+" required placeholder="myapp">
+                        <div class="form-text small">Только a-z, 0-9, _, -, .</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Архив</label>
+                        <input type="file" class="form-control" name="archive" accept=".zip,.tar.gz,.tgz,.tar" required>
+                        <div class="form-text small">.zip, .tar.gz, .tgz, .tar</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Загрузить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка: git clone -->
+<div class="modal fade" id="gitModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('main.git_clone') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">🔗 Клонировать git-репозиторий</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Имя приложения</label>
+                        <input type="text" class="form-control" name="name" pattern="[a-zA-Z0-9_.\-]+" required placeholder="myapp">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Git URL</label>
+                        <input type="url" class="form-control" name="git_url" required placeholder="https://github.com/user/repo.git">
+                        <div class="form-text small">HTTPS или SSH. Клонируется с --depth 1.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-success">Клонировать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Авто-обновление системных метрик каждые 5 секунд
+setInterval(async () => {
+    try {
+        const r = await fetch('{{ url_for("main.api_system_metrics") }}');
+        const d = await r.json();
+        if (!d.cpu && d.cpu !== 0) return;
+        // Обновляем только числа, чтобы не дёргать разметку
+        const cards = document.querySelectorAll('.card-body.py-3 .fs-5');
+        if (cards.length >= 4) {
+            cards[0].textContent = d.cpu + '%';
+            cards[1].textContent = d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB';
+            cards[2].textContent = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
+            cards[3].textContent = d.uptime_str;
+        }
+    } catch (e) {}
+}, 5000);
+</script>
 {% endblock %}
