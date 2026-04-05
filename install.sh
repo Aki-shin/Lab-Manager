@@ -130,9 +130,13 @@ fi
 
 MANAGER_PORT=$(grep -oP '(?<=MANAGER_PORT=).*' "$ENV_FILE" 2>/dev/null || echo "80")
 
-# --- 4. Директория приложений ---
+# --- 4. Директория приложений и БД ---
 mkdir -p "$APPS_DIR"
 ok "Директория ${APPS_DIR} готова."
+
+mkdir -p "${PROJECT_DIR}/data"
+chmod 700 "${PROJECT_DIR}/data"
+ok "Директория для БД (${PROJECT_DIR}/data) готова."
 
 # --- 5. Systemd service ---
 info "Создаю systemd service..."

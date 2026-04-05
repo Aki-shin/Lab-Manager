@@ -226,6 +226,10 @@ WorkingDirectory={app_path}
 ExecStart={entry_cmd}
 Restart=always
 RestartSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=10
+SendSIGKILL=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -253,18 +257,96 @@ def control_service(name, action):
     run_systemctl([action, _service_name(name)])
 
 
-def delete_app_service(name):
-    """Останавливает, отключает и удаляет .service файл."""
-    svc = _service_name(name)
-    run_systemctl(["stop", svc])
-    run_systemctl(["disable", svc])
+def _force_kill_tree(pid):
+    """Принудительно убивает процесс и всех его потомков."""
+    if not pid:
+        return
+    try:
+        proc = psutil.Process(pid)
+        procs = proc.children(recursive=True) + [proc]
+    except psutil.NoSuchProcess:
+        return
+    except Exception:
+        return
 
+    # SIGTERM
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    gone, alive = psutil.wait_procs(procs, timeout=3)
+    # SIGKILL для всех, кто ещё жив
+    for p in alive:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
+def _kill_by_port(port):
+    """Убивает процесс, занимающий указанный TCP-порт (safety net)."""
+    if not port:
+        return
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return
+    try:
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr and conn.laddr.port == port and conn.status == psutil.CONN_LISTEN and conn.pid:
+                _force_kill_tree(conn.pid)
+    except (psutil.AccessDenied, Exception):
+        pass
+
+
+def delete_app_service(name):
+    """Останавливает, отключает и удаляет .service файл.
+
+    Гарантирует, что процесс приложения действительно убит:
+    - systemctl stop (graceful)
+    - ожидание перехода в inactive
+    - принудительный kill дерева процессов по MainPID
+    - освобождение порта (на случай «сиротского» процесса)
+    """
+    svc = _service_name(name)
     path = _service_path(name)
-    if os.path.exists(path):
-        os.remove(path)
-        run_systemctl(["daemon-reload"])
-        return True
-    return False
+
+    if not os.path.exists(path):
+        return False
+
+    # Запоминаем данные ДО остановки — после stop MainPID обнулится
+    port = get_assigned_port(name)
+    pid = get_service_pid(name)
+
+    # 1. Graceful stop
+    run_systemctl(["stop", svc])
+
+    # 2. Ждём до 5 секунд перехода в inactive
+    for _ in range(10):
+        if run_systemctl(["is-active", svc]) != "active":
+            break
+        time.sleep(0.5)
+
+    # 3. Если процесс всё ещё жив — бьём по дереву
+    if pid:
+        try:
+            if psutil.pid_exists(pid):
+                _force_kill_tree(pid)
+        except Exception:
+            pass
+
+    # 4. Safety net: убиваем всё, что ещё висит на порту
+    _kill_by_port(port)
+
+    # 5. Отключаем, сбрасываем failed-состояние
+    run_systemctl(["disable", svc])
+    run_systemctl(["reset-failed", svc])
+
+    # 6. Удаляем unit-файл
+    os.remove(path)
+    run_systemctl(["daemon-reload"])
+    return True
 
 
 def parse_service_file(name):
@@ -405,6 +487,69 @@ def stream_app_logs(name):
                 proc.kill()
             except Exception:
                 pass
+
+
+# --- Авто-настройка окружения приложения ---
+
+def setup_app_environment(name):
+    """
+    Автоматически создаёт venv и ставит зависимости из requirements.txt,
+    если это похоже на Python-приложение.
+    Возвращает (ok, message).
+    """
+    app_path = os.path.join(Config.APPS_DIR, name)
+    if not os.path.isdir(app_path):
+        return False, f"Директория {app_path} не найдена"
+
+    req_file = os.path.join(app_path, "requirements.txt")
+    has_python = any(
+        os.path.exists(os.path.join(app_path, f))
+        for f in ("app.py", "main.py", "wsgi.py")
+    )
+    has_req = os.path.exists(req_file)
+
+    if not has_req and not has_python:
+        return True, "Python-файлов не обнаружено — venv не требуется"
+
+    venv_dir = os.path.join(app_path, "venv")
+    venv_python = os.path.join(venv_dir, "bin", "python")
+
+    # 1. Создаём venv, если его нет или он сломан
+    if not (os.path.exists(venv_python) and os.access(venv_python, os.X_OK)):
+        # Если существует, но битый — сносим
+        if os.path.isdir(venv_dir):
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        try:
+            result = subprocess.run(
+                ["python3", "-m", "venv", venv_dir],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode != 0:
+                return False, f"Ошибка создания venv: {result.stderr.strip()[:300]}"
+        except subprocess.TimeoutExpired:
+            return False, "Таймаут создания venv (>120с)"
+        except Exception as e:
+            return False, f"Ошибка создания venv: {e}"
+
+    # 2. Обновляем pip и ставим зависимости
+    if has_req:
+        try:
+            result = subprocess.run(
+                [venv_python, "-m", "pip", "install",
+                 "--disable-pip-version-check", "--quiet",
+                 "-r", req_file],
+                capture_output=True, text=True, timeout=600
+            )
+            if result.returncode != 0:
+                err = (result.stderr.strip() or result.stdout.strip())[:400]
+                return False, f"venv создан, но pip install упал: {err}"
+            return True, "venv создан, зависимости установлены"
+        except subprocess.TimeoutExpired:
+            return False, "Таймаут установки зависимостей (>10 мин)"
+        except Exception as e:
+            return False, f"venv создан, но ошибка pip: {e}"
+
+    return True, "venv создан (requirements.txt не найден)"
 
 
 # --- Git интеграция ---

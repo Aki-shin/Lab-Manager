@@ -15,6 +15,51 @@ ok()    { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 err()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 
+# Жёсткая остановка systemd-юнита: stop -> ждём -> kill main pid -> освобождение порта
+hard_stop_unit() {
+    local unit="$1"
+
+    # Получаем данные ДО остановки
+    local main_pid
+    main_pid="$(systemctl show -p MainPID --value "$unit" 2>/dev/null || echo 0)"
+    local port
+    port="$(systemctl show -p Environment --value "$unit" 2>/dev/null \
+            | tr ' ' '\n' | grep '^PORT=' | cut -d= -f2 || true)"
+
+    # 1. Graceful stop
+    systemctl stop "$unit" 2>/dev/null || true
+
+    # 2. Ждём до 5 секунд
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if [ "$(systemctl is-active "$unit" 2>/dev/null)" != "active" ]; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    # 3. Принудительно убиваем дерево по MainPID, если процесс жив
+    if [ -n "${main_pid:-}" ] && [ "$main_pid" != "0" ] && kill -0 "$main_pid" 2>/dev/null; then
+        warn "Процесс $main_pid ещё жив — принудительно SIGKILL дерева"
+        pkill -KILL -P "$main_pid" 2>/dev/null || true
+        kill -KILL "$main_pid" 2>/dev/null || true
+    fi
+
+    # 4. Safety net: освобождаем порт, если его кто-то держит
+    if [ -n "${port:-}" ] && command -v ss >/dev/null 2>&1; then
+        local pids_on_port
+        pids_on_port="$(ss -ltnp "sport = :${port}" 2>/dev/null \
+                        | grep -oP 'pid=\K[0-9]+' | sort -u || true)"
+        if [ -n "$pids_on_port" ]; then
+            warn "Порт ${port} занят PID(s): $pids_on_port — убиваю"
+            for p in $pids_on_port; do
+                kill -KILL "$p" 2>/dev/null || true
+            done
+        fi
+    fi
+
+    systemctl reset-failed "$unit" 2>/dev/null || true
+}
+
 if [ "$(id -u)" -ne 0 ]; then
     err "Запустите от root:  sudo ./uninstall.sh"
 fi
@@ -36,7 +81,7 @@ echo ""
 # --- 1. Остановка Lab Manager ---
 if [ -f "$SERVICE_FILE" ]; then
     info "Останавливаю сервис ${SERVICE_NAME}..."
-    systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+    hard_stop_unit "${SERVICE_NAME}.service"
     systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
     rm -f "$SERVICE_FILE"
     systemctl daemon-reload
@@ -65,12 +110,14 @@ if [ ${#MANAGED_SERVICES[@]} -gt 0 ]; then
     read -p "  Удалить их systemd-сервисы? (код в ${APPS_DIR} останется) [y/N]: " REMOVE_APP_SERVICES
     if [[ "${REMOVE_APP_SERVICES,,}" == "y" ]]; then
         for svc in "${MANAGED_SERVICES[@]}"; do
-            systemctl stop "${SERVICE_PREFIX}${svc}.service" 2>/dev/null || true
-            systemctl disable "${SERVICE_PREFIX}${svc}.service" 2>/dev/null || true
-            rm -f "/etc/systemd/system/${SERVICE_PREFIX}${svc}.service"
+            unit="${SERVICE_PREFIX}${svc}.service"
+            info "  → ${svc}"
+            hard_stop_unit "$unit"
+            systemctl disable "$unit" 2>/dev/null || true
+            rm -f "/etc/systemd/system/${unit}"
         done
         systemctl daemon-reload
-        ok "Сервисы приложений удалены."
+        ok "Сервисы приложений удалены (процессы добиты)."
     else
         ok "Сервисы приложений оставлены."
     fi

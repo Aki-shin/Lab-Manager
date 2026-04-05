@@ -1,21 +1,23 @@
 import os
 import re
 import tempfile
-import functools
 import requests
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
-    Response, stream_with_context, jsonify
+    Response, stream_with_context, jsonify, abort
 )
 from werkzeug.utils import secure_filename
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from .config import Config
+from . import db
+from .auth import login_required, admin_required, current_user
 from .services import (
     find_free_port, get_app_status, get_app_logs,
     create_app_service, update_app_service, control_service, delete_app_service,
     run_diagnostic_test, parse_service_file,
     get_system_stats, stream_app_logs,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
+    setup_app_environment,
     RESERVED_ENV_KEYS
 )
 
@@ -30,36 +32,31 @@ def is_safe_redirect_url(url):
 bp = Blueprint('main', __name__)
 
 
-def login_required(f):
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user' not in session:
-            return redirect(url_for('main.login', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 # --- Авторизация ---
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        password = request.form.get('password')
-        if Config.ADMIN_PASSWORD and check_password_hash(Config.ADMIN_PASSWORD, password):
-            session['user'] = 'admin'
-            flash('Добро пожаловать!', 'success')
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+
+        user = db.get_user_by_username(username) if username else None
+        if user and check_password_hash(user['password_hash'], password):
+            session.clear()
+            session['user_id'] = user['id']
+            flash(f'Добро пожаловать, {user["username"]}!', 'success')
             next_url = request.args.get('next')
             if not is_safe_redirect_url(next_url):
                 next_url = url_for('main.index')
             return redirect(next_url)
         else:
-            flash('Неверный пароль', 'danger')
+            flash('Неверный логин или пароль', 'danger')
     return render_template('login.html')
 
 
 @bp.route('/logout')
 def logout():
-    session.pop('user', None)
+    session.clear()
     flash('Вы вышли из системы', 'info')
     return redirect(url_for('main.login'))
 
@@ -69,14 +66,29 @@ def logout():
 @bp.route('/')
 @login_required
 def index():
+    user = current_user()
     apps = []
+
+    if user.get('is_admin'):
+        # Администратор видит всё + системные метрики
+        if os.path.exists(Config.APPS_DIR):
+            for item in sorted(os.listdir(Config.APPS_DIR)):
+                path = os.path.join(Config.APPS_DIR, item)
+                if os.path.isdir(path):
+                    apps.append(get_app_status(item, with_metrics=True))
+        system = get_system_stats()
+        return render_template("dashboard.html", apps=apps, system=system)
+
+    # Обычный пользователь — только доступные приложения
+    allowed = set(db.get_user_permissions(user['id']))
     if os.path.exists(Config.APPS_DIR):
         for item in sorted(os.listdir(Config.APPS_DIR)):
+            if item not in allowed:
+                continue
             path = os.path.join(Config.APPS_DIR, item)
             if os.path.isdir(path):
-                apps.append(get_app_status(item, with_metrics=True))
-    system = get_system_stats()
-    return render_template("dashboard.html", apps=apps, system=system)
+                apps.append(get_app_status(item, with_metrics=False))
+    return render_template("my_apps.html", apps=apps)
 
 
 @bp.route('/help')
@@ -86,7 +98,7 @@ def help_page():
 
 
 @bp.route('/app/<name>')
-@login_required
+@admin_required
 def app_detail(name):
     safe_name = secure_filename(name)
     app_data = get_app_status(safe_name, with_metrics=True)
@@ -138,7 +150,7 @@ def _resolve_entry_cmd(app_path, entry_cmd):
 
 
 @bp.route('/create/<name>', methods=['POST'])
-@login_required
+@admin_required
 def create_service(name):
     safe_name = secure_filename(name)
     app_path = os.path.join(Config.APPS_DIR, safe_name)
@@ -167,7 +179,7 @@ def create_service(name):
 
 
 @bp.route('/edit/<name>', methods=['GET', 'POST'])
-@login_required
+@admin_required
 def edit_service(name):
     safe_name = secure_filename(name)
     app_path = os.path.join(Config.APPS_DIR, safe_name)
@@ -197,7 +209,7 @@ def edit_service(name):
 
 
 @bp.route('/action/<name>/<action>', methods=['POST'])
-@login_required
+@admin_required
 def service_action(name, action):
     safe_name = secure_filename(name)
     if action not in ['start', 'stop', 'restart']:
@@ -210,11 +222,13 @@ def service_action(name, action):
 
 
 @bp.route('/delete/<name>', methods=['POST'])
-@login_required
+@admin_required
 def delete_service(name):
     safe_name = secure_filename(name)
 
     if delete_app_service(safe_name):
+        # Удаляем связанные права доступа
+        db.delete_app_permissions(safe_name)
         flash(f"Сервис {safe_name} удален", "warning")
     else:
         flash("Файл сервиса не найден", "danger")
@@ -223,7 +237,7 @@ def delete_service(name):
 
 
 @bp.route('/diagnose/<name>')
-@login_required
+@admin_required
 def diagnose_app(name):
     safe_name = secure_filename(name)
     report = run_diagnostic_test(safe_name)
@@ -236,7 +250,7 @@ ALLOWED_ARCHIVE_EXT = ('.zip', '.tar.gz', '.tgz', '.tar')
 
 
 @bp.route('/upload', methods=['POST'])
-@login_required
+@admin_required
 def upload_app():
     """Загрузка zip/tar.gz приложения."""
     name = (request.form.get('name') or '').strip()
@@ -254,7 +268,6 @@ def upload_app():
         flash("Поддерживаются только .zip, .tar.gz, .tgz, .tar", "danger")
         return redirect(url_for('main.index'))
 
-    # Определяем суффикс для временного файла
     if fname.endswith('.tar.gz'):
         suffix = '.tar.gz'
     else:
@@ -274,12 +287,15 @@ def upload_app():
             pass
 
     if ok:
+        # Авто-настройка окружения (venv + pip install)
+        setup_ok, setup_msg = setup_app_environment(name)
+        flash(f"Окружение: {setup_msg}", "info" if setup_ok else "warning")
         return redirect(url_for('main.app_detail', name=name))
     return redirect(url_for('main.index'))
 
 
 @bp.route('/git/clone', methods=['POST'])
-@login_required
+@admin_required
 def git_clone():
     """Клонирование приложения из git-репозитория."""
     name = (request.form.get('name') or '').strip()
@@ -292,24 +308,40 @@ def git_clone():
     ok, msg = git_clone_app(git_url, name)
     flash(msg, "success" if ok else "danger")
     if ok:
+        # Авто-настройка окружения (venv + pip install)
+        setup_ok, setup_msg = setup_app_environment(name)
+        flash(f"Окружение: {setup_msg}", "info" if setup_ok else "warning")
         return redirect(url_for('main.app_detail', name=name))
     return redirect(url_for('main.index'))
 
 
 @bp.route('/git/pull/<name>', methods=['POST'])
-@login_required
+@admin_required
 def git_pull(name):
-    """git pull для существующего приложения."""
+    """git pull для существующего приложения + обновление зависимостей."""
     safe_name = secure_filename(name)
     ok, msg = git_pull_app(safe_name)
     flash(msg, "success" if ok else "danger")
+    if ok:
+        setup_ok, setup_msg = setup_app_environment(safe_name)
+        flash(f"Окружение: {setup_msg}", "info" if setup_ok else "warning")
+    return redirect(url_for('main.app_detail', name=safe_name))
+
+
+@bp.route('/setup/<name>', methods=['POST'])
+@admin_required
+def setup_env(name):
+    """Ручная (пере)установка venv и зависимостей приложения."""
+    safe_name = secure_filename(name)
+    ok, msg = setup_app_environment(safe_name)
+    flash(f"Окружение: {msg}", "success" if ok else "danger")
     return redirect(url_for('main.app_detail', name=safe_name))
 
 
 # --- SSE-логи ---
 
 @bp.route('/logs/<name>/stream')
-@login_required
+@admin_required
 def logs_stream(name):
     """Server-Sent Events: стрим логов в реальном времени."""
     safe_name = secure_filename(name)
@@ -331,7 +363,7 @@ def logs_stream(name):
 # --- API метрик ---
 
 @bp.route('/api/metrics/<name>')
-@login_required
+@admin_required
 def api_app_metrics(name):
     """JSON с метриками приложения для обновления на странице."""
     safe_name = secure_filename(name)
@@ -340,10 +372,123 @@ def api_app_metrics(name):
 
 
 @bp.route('/api/system')
-@login_required
+@admin_required
 def api_system_metrics():
     """JSON системных метрик."""
     return jsonify(get_system_stats() or {})
+
+
+# --- Управление пользователями (admin only) ---
+
+USERNAME_RE = re.compile(r'^[a-zA-Z0-9_.-]{3,32}$')
+
+
+@bp.route('/users')
+@admin_required
+def users_list():
+    users = db.list_users()
+    return render_template('users.html', users=users)
+
+
+@bp.route('/users/create', methods=['POST'])
+@admin_required
+def users_create():
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    is_admin = bool(request.form.get('is_admin'))
+
+    if not USERNAME_RE.match(username):
+        flash('Недопустимое имя пользователя (3-32 символа: a-z, 0-9, _, -, .)', 'danger')
+        return redirect(url_for('main.users_list'))
+    if len(password) < 4:
+        flash('Пароль должен быть не короче 4 символов', 'danger')
+        return redirect(url_for('main.users_list'))
+    if db.get_user_by_username(username):
+        flash('Пользователь с таким именем уже существует', 'danger')
+        return redirect(url_for('main.users_list'))
+
+    db.create_user(username, generate_password_hash(password), is_admin=is_admin)
+    flash(f'Пользователь {username} создан', 'success')
+    return redirect(url_for('main.users_list'))
+
+
+@bp.route('/users/<int:user_id>/edit', methods=['POST'])
+@admin_required
+def users_edit(user_id):
+    target = db.get_user_by_id(user_id)
+    if not target:
+        abort(404)
+
+    new_password = request.form.get('password') or ''
+    is_admin_form = request.form.get('is_admin')
+    # Чекбокс может отсутствовать — значит снимаем флаг
+    new_is_admin = bool(is_admin_form)
+
+    password_hash = None
+    if new_password:
+        if len(new_password) < 4:
+            flash('Пароль должен быть не короче 4 символов', 'danger')
+            return redirect(url_for('main.users_list'))
+        password_hash = generate_password_hash(new_password)
+
+    # Защита от снятия последнего админа
+    if target['is_admin'] and not new_is_admin and db.count_admins() <= 1:
+        flash('Нельзя снять права у последнего администратора', 'danger')
+        return redirect(url_for('main.users_list'))
+
+    db.update_user(user_id, password_hash=password_hash, is_admin=new_is_admin)
+    flash('Пользователь обновлён', 'success')
+    return redirect(url_for('main.users_list'))
+
+
+@bp.route('/users/<int:user_id>/delete', methods=['POST'])
+@admin_required
+def users_delete(user_id):
+    target = db.get_user_by_id(user_id)
+    if not target:
+        abort(404)
+
+    me = current_user()
+    if me and me['id'] == user_id:
+        flash('Нельзя удалить самого себя', 'danger')
+        return redirect(url_for('main.users_list'))
+
+    if target['is_admin'] and db.count_admins() <= 1:
+        flash('Нельзя удалить последнего администратора', 'danger')
+        return redirect(url_for('main.users_list'))
+
+    db.delete_user(user_id)
+    flash(f'Пользователь {target["username"]} удалён', 'warning')
+    return redirect(url_for('main.users_list'))
+
+
+@bp.route('/users/<int:user_id>/permissions', methods=['GET', 'POST'])
+@admin_required
+def users_permissions(user_id):
+    target = db.get_user_by_id(user_id)
+    if not target:
+        abort(404)
+
+    # Список всех приложений
+    all_apps = []
+    if os.path.exists(Config.APPS_DIR):
+        for item in sorted(os.listdir(Config.APPS_DIR)):
+            if os.path.isdir(os.path.join(Config.APPS_DIR, item)):
+                all_apps.append(item)
+
+    if request.method == 'POST':
+        selected = request.form.getlist('apps')
+        # Фильтруем только реально существующие
+        selected = [a for a in selected if a in all_apps]
+        db.set_user_permissions(user_id, selected)
+        flash('Права обновлены', 'success')
+        return redirect(url_for('main.users_list'))
+
+    current_perms = set(db.get_user_permissions(user_id))
+    return render_template(
+        'user_permissions.html',
+        target=target, all_apps=all_apps, current_perms=current_perms
+    )
 
 
 # --- PROXY ---
@@ -353,6 +498,12 @@ def api_system_metrics():
 @login_required
 def proxy(name, path):
     safe_name = secure_filename(name)
+
+    # Проверка прав доступа к приложению
+    user = current_user()
+    if not db.user_can_access_app(user, safe_name):
+        abort(403)
+
     app_data = get_app_status(safe_name)
 
     if not app_data['assigned_port'] or app_data['active_state'] != 'active':

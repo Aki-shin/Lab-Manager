@@ -25,6 +25,12 @@
                         <small>Systemd сервис отсутствует. Создайте его для запуска.</small>
                     </div>
 
+                    <form action="{{ url_for('main.setup_env', name=app.name) }}" method="post" class="mb-3">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+                            ⚙️ Настроить окружение (venv + pip install)
+                        </button>
+                    </form>
+
                     <form action="{{ url_for('main.create_service', name=app.name) }}" method="post">
                         <div class="mb-3">
                             <label class="form-label text-muted small">Порт (пусто = авто)</label>
@@ -115,9 +121,14 @@
 
                         <a href="{{ url_for('main.edit_service', name=app.name) }}" class="btn btn-outline-primary">✏️ Редактировать сервис</a>
 
+                        <form action="{{ url_for('main.setup_env', name=app.name) }}" method="post"
+                              onsubmit="return confirm('Пересобрать venv и переустановить зависимости?');">
+                            <button type="submit" class="btn btn-outline-secondary w-100">⚙️ Настроить окружение (venv)</button>
+                        </form>
+
                         {% if app.is_git %}
                         <form action="{{ url_for('main.git_pull', name=app.name) }}" method="post">
-                            <button type="submit" class="btn btn-outline-success w-100">⬇ git pull</button>
+                            <button type="submit" class="btn btn-outline-success w-100">⬇ git pull + обновить venv</button>
                         </form>
                         {% endif %}
                     </div>

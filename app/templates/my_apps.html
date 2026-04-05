@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Мои приложения — Lab Manager{% endblock %}
+{% block content %}
+<h2 class="mb-4">🚀 Доступные приложения</h2>
+
+{% if apps %}
+<div class="row">
+    {% for app in apps %}
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    {{ app.name }}
+                    {% if app.active_state == 'active' %}
+                        <span class="badge bg-success">работает</span>
+                    {% else %}
+                        <span class="badge bg-secondary">остановлено</span>
+                    {% endif %}
+                </h5>
+                {% if app.assigned_port %}
+                    <p class="text-muted mb-2"><small>Порт: {{ app.assigned_port }}</small></p>
+                {% endif %}
+
+                {% if app.active_state == 'active' %}
+                    <a href="{{ url_for('main.proxy', name=app.name, path='') }}" class="btn btn-primary btn-sm" target="_blank">
+                        Открыть →
+                    </a>
+                {% else %}
+                    <button class="btn btn-secondary btn-sm" disabled>Недоступно</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+        <h4>Нет доступных приложений</h4>
+        <p>Обратитесь к администратору для получения доступа.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
