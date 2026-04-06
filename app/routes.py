@@ -1,10 +1,10 @@
 import os
 import re
 import tempfile
-import requests
+from urllib.parse import urlparse
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
-    Response, stream_with_context, jsonify, abort
+    Response, stream_with_context, jsonify, abort  # noqa: F401
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -17,16 +17,31 @@ from .services import (
     run_diagnostic_test, parse_service_file,
     get_system_stats, stream_app_logs,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
-    setup_app_environment,
+    setup_app_environment, get_assigned_port,
     RESERVED_ENV_KEYS
 )
+from . import port_forwarder
 
 
 def is_safe_redirect_url(url):
-    """Проверяет, что URL — безопасный относительный путь (без open redirect)."""
+    """
+    Безопасный URL для редиректа. Разрешаем:
+      - относительный путь (/app/..., /users/...)
+      - абсолютный URL на тот же hostname (возможно с другим портом —
+        это нужно для возврата с внешнего порта внутреннего приложения)
+    """
     if not url:
         return False
-    return url.startswith('/') and not url.startswith('//')
+    if url.startswith('/') and not url.startswith('//'):
+        return True
+    try:
+        target = urlparse(url)
+        host = urlparse(request.host_url)
+        if target.scheme in ('http', 'https') and target.hostname == host.hostname:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 bp = Blueprint('main', __name__)
@@ -75,7 +90,9 @@ def index():
             for item in sorted(os.listdir(Config.APPS_DIR)):
                 path = os.path.join(Config.APPS_DIR, item)
                 if os.path.isdir(path):
-                    apps.append(get_app_status(item, with_metrics=True))
+                    status = get_app_status(item, with_metrics=True)
+                    status['external_port'] = db.get_external_port(item)
+                    apps.append(status)
         system = get_system_stats()
         return render_template("dashboard.html", apps=apps, system=system)
 
@@ -87,7 +104,9 @@ def index():
                 continue
             path = os.path.join(Config.APPS_DIR, item)
             if os.path.isdir(path):
-                apps.append(get_app_status(item, with_metrics=False))
+                status = get_app_status(item, with_metrics=False)
+                status['external_port'] = db.get_external_port(item)
+                apps.append(status)
     return render_template("my_apps.html", apps=apps)
 
 
@@ -102,6 +121,7 @@ def help_page():
 def app_detail(name):
     safe_name = secure_filename(name)
     app_data = get_app_status(safe_name, with_metrics=True)
+    app_data['external_port'] = db.get_external_port(safe_name)
 
     logs = ""
     if app_data['has_service']:
@@ -226,9 +246,13 @@ def service_action(name, action):
 def delete_service(name):
     safe_name = secure_filename(name)
 
+    # Сначала останавливаем форвардер, если был, иначе порт останется занят
+    port_forwarder.stop_forwarder(safe_name)
+
     if delete_app_service(safe_name):
-        # Удаляем связанные права доступа
+        # Очищаем все связанные записи в БД
         db.delete_app_permissions(safe_name)
+        db.delete_app_settings(safe_name)
         flash(f"Сервис {safe_name} удален", "warning")
     else:
         flash("Файл сервиса не найден", "danger")
@@ -335,6 +359,79 @@ def setup_env(name):
     safe_name = secure_filename(name)
     ok, msg = setup_app_environment(safe_name)
     flash(f"Окружение: {msg}", "success" if ok else "danger")
+    return redirect(url_for('main.app_detail', name=safe_name))
+
+
+# --- Внешний порт (прозрачный TCP-проброс) ---
+
+RESERVED_EXTERNAL_PORTS = {22}  # SSH всегда запрещён
+
+def _panel_port():
+    try:
+        return int(os.environ.get('PANEL_PORT', '80'))
+    except ValueError:
+        return 80
+
+
+@bp.route('/external/<name>', methods=['POST'])
+@admin_required
+def set_external_port(name):
+    """
+    Настраивает прозрачный внешний порт для приложения.
+    Пустое поле или 'off' → отключить форвардер.
+    """
+    safe_name = secure_filename(name)
+    raw = (request.form.get('external_port') or '').strip()
+
+    # Выключение
+    if not raw or raw.lower() in ('off', 'disable', '0'):
+        port_forwarder.stop_forwarder(safe_name)
+        db.clear_external_port(safe_name)
+        flash("Внешний порт отключён", "info")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    # Валидация числа
+    try:
+        ext_port = int(raw)
+    except ValueError:
+        flash("Порт должен быть числом", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    if not (1 <= ext_port <= 65535):
+        flash("Порт вне диапазона 1-65535", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    # Защита от самоповреждения: нельзя занять порт самой панели или SSH
+    if ext_port == _panel_port():
+        flash(f"Порт {ext_port} занят панелью Lab Manager", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+    if ext_port in RESERVED_EXTERNAL_PORTS:
+        flash(f"Порт {ext_port} зарезервирован системой", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    # Нельзя совпадать с внутренним портом того же приложения
+    # (иначе 0.0.0.0:port конфликтует с 127.0.0.1:port)
+    internal = get_assigned_port(safe_name)
+    if internal and int(internal) == ext_port:
+        flash("Внешний порт не может совпадать с внутренним портом приложения", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    # Пытаемся поднять форвардер
+    try:
+        port_forwarder.start_forwarder(safe_name, ext_port)
+    except OSError as e:
+        flash(f"Не удалось занять порт {ext_port}: {e}", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+    except Exception as e:
+        flash(f"Ошибка запуска форвардера: {e}", "danger")
+        return redirect(url_for('main.app_detail', name=safe_name))
+
+    db.set_external_port(safe_name, ext_port)
+    flash(
+        f"Внешний порт {ext_port} активен → 127.0.0.1:{internal or '?'} "
+        f"(авторизация через Lab Manager)",
+        "success",
+    )
     return redirect(url_for('main.app_detail', name=safe_name))
 
 
@@ -490,66 +587,3 @@ def users_permissions(user_id):
         target=target, all_apps=all_apps, current_perms=current_perms
     )
 
-
-# --- PROXY ---
-
-@bp.route('/proxy/<name>/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-@bp.route('/proxy/<name>/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-@login_required
-def proxy(name, path):
-    safe_name = secure_filename(name)
-
-    # Проверка прав доступа к приложению
-    user = current_user()
-    if not db.user_can_access_app(user, safe_name):
-        abort(403)
-
-    app_data = get_app_status(safe_name)
-
-    if not app_data['assigned_port'] or app_data['active_state'] != 'active':
-        return render_template("base.html", content=f"<h1>Ошибка 502</h1><p>Приложение {safe_name} не запущено.</p>"), 502
-
-    target_url = f"http://127.0.0.1:{app_data['assigned_port']}/{path}"
-
-    headers = {key: value for (key, value) in request.headers if key.lower() != 'host'}
-    headers['X-Script-Name'] = f"/proxy/{safe_name}"
-    headers['X-Forwarded-For'] = request.remote_addr
-    headers['X-Forwarded-Proto'] = request.scheme
-    headers['X-Forwarded-Host'] = request.host
-
-    try:
-        resp = requests.request(
-            method=request.method,
-            url=target_url,
-            headers=headers,
-            data=request.get_data(),
-            cookies=request.cookies,
-            allow_redirects=False,
-            params=request.args,
-            stream=True
-        )
-
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers_back = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded_headers]
-
-        if 'Location' in resp.headers:
-            loc = resp.headers['Location']
-            app_root = f"http://127.0.0.1:{app_data['assigned_port']}"
-
-            if loc.startswith(app_root):
-                loc = loc.replace(app_root, f"/proxy/{safe_name}")
-            elif loc.startswith('/'):
-                loc = f"/proxy/{safe_name}{loc}"
-
-            headers_back = [(k, v) if k.lower() != 'location' else ('Location', loc) for k, v in headers_back]
-
-        return Response(
-            resp.iter_content(chunk_size=4096),
-            status=resp.status_code,
-            headers=headers_back
-        )
-
-    except requests.exceptions.ConnectionError:
-        return "Ошибка подключения к приложению. Возможно, оно еще загружается.", 502
-    except Exception as e:
-        return f"Proxy Error: {e}", 500

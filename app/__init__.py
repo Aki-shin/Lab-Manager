@@ -5,6 +5,14 @@ from .config import Config
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # Уникальное имя cookie, чтобы не конфликтовать с внутренними Flask-приложениями,
+    # которые тоже по умолчанию используют cookie с именем "session".
+    app.config['SESSION_COOKIE_NAME'] = 'labmgr_session'
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_PATH'] = '/'
+
     Config.init_dirs()
 
     # Инициализация БД (users, permissions) + bootstrap admin
@@ -21,5 +29,9 @@ def create_app():
     @app.context_processor
     def inject_user():
         return {'current_user': current_user()}
+
+    # Запускаем TCP-форвардеры для приложений с настроенным внешним портом
+    from . import port_forwarder
+    port_forwarder.init(app)
 
     return app

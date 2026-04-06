@@ -2,6 +2,7 @@
 {% block title %}{{ app.name }} - Управление{% endblock %}
 
 {% block content %}
+{% set external_port = app.external_port %}
 <nav aria-label="breadcrumb">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
@@ -94,11 +95,16 @@
                     </div>
                     {% endif %}
 
-                    {% if app.assigned_port and app.active_state == 'active' %}
+                    {% if app.active_state == 'active' and external_port %}
                     <div class="d-grid gap-2 mb-3">
-                        <a href="/proxy/{{ app.name }}/" target="_blank" class="btn btn-success fw-bold py-2">
-                            🚀 Открыть приложение
+                        <a href="//{{ request.host.split(':')[0] }}:{{ external_port }}/" target="_blank"
+                           class="btn btn-success fw-bold py-2">
+                            🚀 Открыть приложение (порт {{ external_port }})
                         </a>
+                    </div>
+                    {% elif app.active_state == 'active' and not external_port %}
+                    <div class="alert alert-warning py-2 small">
+                        Приложение запущено, но внешний порт не настроен. Назначьте порт ниже.
                     </div>
                     {% endif %}
 
@@ -131,6 +137,47 @@
                             <button type="submit" class="btn btn-outline-success w-100">⬇ git pull + обновить venv</button>
                         </form>
                         {% endif %}
+                    </div>
+
+                    <hr>
+
+                    <!-- Прозрачный внешний порт -->
+                    <div class="card border-info mb-2">
+                        <div class="card-header bg-info text-white py-2">
+                            🌐 Внешний порт (прозрачный режим)
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="small text-muted mb-2">
+                                Приложение откроется на <code>host:PORT</code>, как если бы оно
+                                работало напрямую. Авторизация берётся из cookie панели —
+                                достаточно войти один раз.
+                            </p>
+                            {% if external_port %}
+                                <div class="alert alert-info py-2 small mb-2">
+                                    <b>Активен на порту {{ external_port }}</b>
+                                    → 127.0.0.1:{{ app.assigned_port or '?' }}
+                                </div>
+                            {% endif %}
+                            <form action="{{ url_for('main.set_external_port', name=app.name) }}" method="post">
+                                <div class="input-group input-group-sm">
+                                    <input type="number" name="external_port" class="form-control"
+                                           min="1024" max="65535"
+                                           placeholder="Например: 5050"
+                                           value="{{ external_port or '' }}">
+                                    <button type="submit" class="btn btn-primary">
+                                        {% if external_port %}Изменить{% else %}Включить{% endif %}
+                                    </button>
+                                    {% if external_port %}
+                                    <button type="submit" name="external_port" value="off"
+                                            class="btn btn-outline-danger"
+                                            onclick="return confirm('Выключить внешний порт?');">✕</button>
+                                    {% endif %}
+                                </div>
+                                <div class="form-text small">
+                                    1024-65535, не равен внутреннему ({{ app.assigned_port or '—' }}) и не 80.
+                                </div>
+                            </form>
+                        </div>
                     </div>
 
                     <hr>

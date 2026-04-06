@@ -102,6 +102,9 @@
                         {% else %}
                             <span class="text-muted">—</span>
                         {% endif %}
+                        {% if app.external_port %}
+                            <span class="badge bg-info ms-1" title="Прозрачный внешний порт">:{{ app.external_port }}</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% if app.resources %}

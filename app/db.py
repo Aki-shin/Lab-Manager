@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS permissions (
     PRIMARY KEY (user_id, app_name),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    app_name TEXT PRIMARY KEY,
+    external_port INTEGER
+);
 """
 
 
@@ -142,6 +147,48 @@ def delete_app_permissions(app_name):
     """Удаляет все права, связанные с приложением (при удалении приложения)."""
     with get_db() as conn:
         conn.execute("DELETE FROM permissions WHERE app_name = ?", (app_name,))
+
+
+# --- Настройки приложений (внешний порт) ---
+
+def get_external_port(app_name):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT external_port FROM app_settings WHERE app_name = ?", (app_name,)
+        ).fetchone()
+        return row['external_port'] if row else None
+
+
+def set_external_port(app_name, port):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (app_name, external_port) VALUES (?, ?) "
+            "ON CONFLICT(app_name) DO UPDATE SET external_port = excluded.external_port",
+            (app_name, int(port))
+        )
+
+
+def clear_external_port(app_name):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE app_settings SET external_port = NULL WHERE app_name = ?",
+            (app_name,)
+        )
+
+
+def list_external_ports():
+    """Список (app_name, port) всех приложений с настроенным внешним портом."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT app_name, external_port FROM app_settings WHERE external_port IS NOT NULL"
+        ).fetchall()
+        return [(r['app_name'], r['external_port']) for r in rows]
+
+
+def delete_app_settings(app_name):
+    """Полная очистка настроек приложения (при удалении сервиса)."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM app_settings WHERE app_name = ?", (app_name,))
 
 
 def user_can_access_app(user, app_name):

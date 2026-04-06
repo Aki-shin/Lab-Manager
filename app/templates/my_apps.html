@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Мои приложения — Lab Manager{% endblock %}
 {% block content %}
-<h2 class="mb-4">🚀 Доступные приложения</h2>
+<h2 class="mb-4">Доступные приложения</h2>
 
 {% if apps %}
 <div class="row">
@@ -17,13 +17,14 @@
                         <span class="badge bg-secondary">остановлено</span>
                     {% endif %}
                 </h5>
-                {% if app.assigned_port %}
-                    <p class="text-muted mb-2"><small>Порт: {{ app.assigned_port }}</small></p>
+                {% if app.external_port %}
+                    <p class="text-muted mb-2"><small>Порт: {{ app.external_port }}</small></p>
                 {% endif %}
 
-                {% if app.active_state == 'active' %}
-                    <a href="{{ url_for('main.proxy', name=app.name, path='') }}" class="btn btn-primary btn-sm" target="_blank">
-                        Открыть →
+                {% if app.active_state == 'active' and app.external_port %}
+                    <a href="//{{ request.host.split(':')[0] }}:{{ app.external_port }}/"
+                       class="btn btn-primary btn-sm" target="_blank">
+                        Открыть
                     </a>
                 {% else %}
                     <button class="btn btn-secondary btn-sm" disabled>Недоступно</button>

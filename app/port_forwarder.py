@@ -1,0 +1,333 @@
+"""
+TCP-форвардер с авторизацией для «прозрачного» проброса внутренних приложений
+на внешние порты Lab Manager.
+
+Идея:
+    Внешний клиент → 0.0.0.0:<external_port> (слушает Lab Manager)
+    Lab Manager    → проверяет cookie labmgr_session и права доступа
+    OK             → сырой TCP-splice на 127.0.0.1:<internal_port>
+    Не авторизован → HTTP 302 на /login?next=<исходный URL>
+
+Преимущества перед path-based proxy (/proxy/name/):
+    - Приложение «живёт» на корне /, не нужны X-Script-Name, <base href>, относительные URL.
+    - Работают любые протоколы поверх TCP (WebSocket, SSE, chunked, бинарные).
+    - Cookies приложения не конфликтуют с cookies панели (разные порты, но одна кука авторизации
+      панели — labmgr_session — видна браузером на всех портах одного хоста по RFC 6265).
+"""
+import os
+import socket
+import threading
+import select
+import logging
+from urllib.parse import quote
+
+from . import db
+from .services import get_assigned_port
+
+log = logging.getLogger(__name__)
+
+BUFFER_SIZE = 16 * 1024
+HEADER_LIMIT = 32 * 1024        # максимум 32 KiB на HTTP-заголовки
+ACCEPT_TIMEOUT = 1.0            # чтобы accept-loop мог корректно останавливаться
+UPSTREAM_CONNECT_TIMEOUT = 5.0  # подключение к внутреннему приложению
+IDLE_TIMEOUT = 600              # 10 минут на простаивающее соединение (WS/SSE живут долго)
+
+
+class PortForwarder:
+    """Один форвардер = один внешний порт, слушающий 0.0.0.0."""
+
+    def __init__(self, flask_app, name, external_port):
+        self.flask_app = flask_app
+        self.name = name
+        self.external_port = int(external_port)
+        self._server_sock = None
+        self._thread = None
+        self._stop = threading.Event()
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('0.0.0.0', self.external_port))
+        sock.listen(128)
+        sock.settimeout(ACCEPT_TIMEOUT)
+
+        self._server_sock = sock
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._accept_loop,
+            name=f"fwd-{self.name}-{self.external_port}",
+            daemon=True,
+        )
+        self._thread.start()
+        log.info(f"[forwarder] {self.name}: слушаю 0.0.0.0:{self.external_port}")
+
+    def stop(self):
+        self._stop.set()
+        if self._server_sock:
+            try:
+                self._server_sock.close()
+            except Exception:
+                pass
+            self._server_sock = None
+        if self._thread:
+            self._thread.join(timeout=3)
+            self._thread = None
+        log.info(f"[forwarder] {self.name}: остановлен")
+
+    # ------------------------------------------------------------------ loop
+
+    def _accept_loop(self):
+        while not self._stop.is_set():
+            try:
+                client, addr = self._server_sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            client.settimeout(None)
+            threading.Thread(
+                target=self._handle_connection,
+                args=(client, addr),
+                daemon=True,
+            ).start()
+
+    # --------------------------------------------------------------- handler
+
+    def _handle_connection(self, client, addr):
+        upstream = None
+        try:
+            # 1. Читаем HTTP-заголовки, пока не встретим \r\n\r\n
+            client.settimeout(10)
+            buf = b''
+            while b'\r\n\r\n' not in buf:
+                try:
+                    chunk = client.recv(BUFFER_SIZE)
+                except socket.timeout:
+                    return
+                if not chunk:
+                    return
+                buf += chunk
+                if len(buf) > HEADER_LIMIT:
+                    self._send_simple(client, 400, "Headers too large")
+                    return
+            client.settimeout(None)
+
+            header_end = buf.index(b'\r\n\r\n') + 4
+            header_text = buf[:header_end].decode('iso-8859-1', errors='replace')
+            lines = header_text.split('\r\n')
+
+            request_line = lines[0] if lines else ''
+            headers = {}
+            for line in lines[1:]:
+                if ':' in line:
+                    k, v = line.split(':', 1)
+                    headers[k.strip().lower()] = v.strip()
+
+            # 2. Проверяем авторизацию через cookie labmgr_session
+            cookie_header = headers.get('cookie', '')
+            authorized = self._is_authorized(cookie_header)
+
+            if not authorized:
+                self._send_login_redirect(client, request_line, headers)
+                return
+
+            # 3. Подключаемся к внутреннему приложению
+            internal_port = get_assigned_port(self.name)
+            if not internal_port:
+                self._send_simple(client, 502, f"Приложение {self.name}: не назначен внутренний порт")
+                return
+
+            try:
+                upstream = socket.create_connection(
+                    ('127.0.0.1', int(internal_port)),
+                    timeout=UPSTREAM_CONNECT_TIMEOUT,
+                )
+                upstream.settimeout(None)
+            except Exception as e:
+                self._send_simple(client, 502, f"Приложение недоступно: {e}")
+                return
+
+            # 4. Отправляем уже прочитанные байты (header + возможный начало body)
+            upstream.sendall(buf)
+
+            # 5. Двунаправленный splice до закрытия
+            self._splice(client, upstream)
+
+        except Exception as e:
+            log.warning(f"[forwarder] {self.name}: ошибка обработки {addr}: {e}")
+        finally:
+            for s in (client, upstream):
+                if s is None:
+                    continue
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+    # -------------------------------------------------------- authorization
+
+    def _is_authorized(self, cookie_header):
+        """Валидирует labmgr_session через Flask и проверяет права пользователя."""
+        if not cookie_header:
+            return False
+        try:
+            with self.flask_app.test_request_context(
+                path='/', headers={'Cookie': cookie_header}
+            ):
+                from flask import session as flask_session
+                user_id = flask_session.get('user_id')
+                if not user_id:
+                    return False
+                user = db.get_user_by_id(user_id)
+                if not user:
+                    return False
+                return db.user_can_access_app(user, self.name)
+        except Exception as e:
+            log.debug(f"[forwarder] session check failed: {e}")
+            return False
+
+    # -------------------------------------------------------------- helpers
+
+    def _send_login_redirect(self, client, request_line, headers):
+        """Отправляет 302 на страницу логина панели с next=<исходный URL>."""
+        try:
+            method, path, _ = request_line.split(' ', 2)
+        except ValueError:
+            path = '/'
+
+        host_header = headers.get('host', '')
+        # hostname без порта
+        panel_host = host_header.split(':')[0] if host_header else ''
+        panel_port = int(os.environ.get('PANEL_PORT', '80'))
+        panel_base = f"http://{panel_host}"
+        if panel_port != 80:
+            panel_base += f":{panel_port}"
+
+        # Исходный URL для next
+        original = f"http://{host_header}{path}" if host_header else path
+        login_url = f"{panel_base}/login?next={quote(original, safe='')}"
+
+        body = (
+            b"<html><body>Redirecting to login...<br>"
+            b"<a href=\"" + login_url.encode('utf-8') + b"\">login</a></body></html>"
+        )
+        resp = (
+            f"HTTP/1.1 302 Found\r\n"
+            f"Location: {login_url}\r\n"
+            f"Content-Type: text/html; charset=utf-8\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"Cache-Control: no-store\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        ).encode('iso-8859-1') + body
+        try:
+            client.sendall(resp)
+        except Exception:
+            pass
+
+    def _send_simple(self, client, status, message):
+        reason = {
+            400: 'Bad Request', 403: 'Forbidden',
+            404: 'Not Found', 502: 'Bad Gateway',
+        }.get(status, 'Error')
+        body = f"<h1>{status} {reason}</h1><p>{message}</p>".encode('utf-8')
+        resp = (
+            f"HTTP/1.1 {status} {reason}\r\n"
+            f"Content-Type: text/html; charset=utf-8\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        ).encode('iso-8859-1') + body
+        try:
+            client.sendall(resp)
+        except Exception:
+            pass
+
+    def _splice(self, a, b):
+        """Двунаправленная передача байтов между сокетами до закрытия.
+
+        Оба сокета остаются в blocking-режиме. select() определяет,
+        кто готов к чтению; recv() на «готовом» сокете не блокирует;
+        sendall() на blocking-сокете корректно дожидается отправки
+        всех байтов (на non-blocking он бросает BlockingIOError).
+        """
+        a.settimeout(None)
+        b.settimeout(None)
+        socks = [a, b]
+        while True:
+            try:
+                r, _, x = select.select(socks, [], socks, IDLE_TIMEOUT)
+            except (OSError, ValueError):
+                return
+            if x or (not r):
+                return
+            for s in r:
+                try:
+                    data = s.recv(BUFFER_SIZE)
+                except Exception:
+                    return
+                if not data:
+                    return
+                other = b if s is a else a
+                try:
+                    other.sendall(data)
+                except Exception:
+                    return
+
+
+# ============================================================= реестр
+
+_forwarders = {}              # name -> PortForwarder
+_lock = threading.Lock()
+_flask_app = None
+
+
+def init(flask_app):
+    """Вызывается при старте Lab Manager. Поднимает все сохранённые форвардеры."""
+    global _flask_app
+    _flask_app = flask_app
+    for name, port in db.list_external_ports():
+        try:
+            _start_unlocked(name, int(port))
+        except Exception as e:
+            log.warning(f"[forwarder] не удалось запустить {name} на порту {port}: {e}")
+
+
+def _start_unlocked(name, external_port):
+    # Остановить старый, если был
+    old = _forwarders.pop(name, None)
+    if old:
+        old.stop()
+
+    fwd = PortForwarder(_flask_app, name, external_port)
+    fwd.start()
+    _forwarders[name] = fwd
+    return fwd
+
+
+def start_forwarder(name, external_port):
+    """Запустить/перезапустить форвардер для приложения. Бросает OSError при занятом порте."""
+    with _lock:
+        return _start_unlocked(name, external_port)
+
+
+def stop_forwarder(name):
+    with _lock:
+        fwd = _forwarders.pop(name, None)
+        if fwd:
+            fwd.stop()
+
+
+def get_forwarder_status(name):
+    """Возвращает (port, running) или (None, False)."""
+    fwd = _forwarders.get(name)
+    if fwd:
+        return fwd.external_port, (fwd._thread is not None and fwd._thread.is_alive())
+    return None, False

@@ -8,8 +8,6 @@
     .help-section { scroll-margin-top: 1rem; }
     .help-section h3 { border-bottom: 2px solid #dee2e6; padding-bottom: .5rem; margin-bottom: 1rem; }
     .kbd { background: #212529; color: #fff; padding: 1px 6px; border-radius: 3px; font-family: monospace; font-size: .85em; }
-    .rule-ok { color: #198754; font-weight: 600; }
-    .rule-bad { color: #dc3545; font-weight: 600; }
     pre.code-block { background: #1e1e1e; color: #e0e0e0; padding: 12px 16px; border-radius: 6px; font-size: .82em; overflow-x: auto; }
     pre.code-block .comment { color: #6a9955; }
     pre.code-block .kw { color: #569cd6; }
@@ -21,15 +19,15 @@
     <div class="col-lg-3 mb-4">
         <div class="help-toc">
             <div class="card shadow-sm">
-                <div class="card-header bg-dark text-white">📖 Оглавление</div>
+                <div class="card-header bg-dark text-white">Оглавление</div>
                 <nav class="nav flex-column p-2">
                     <a class="nav-link" href="#intro">Как это работает</a>
                     <a class="nav-link" href="#add-app">Добавление приложения</a>
                     <a class="nav-link" href="#auto-venv">Авто-venv</a>
+                    <a class="nav-link" href="#port-forwarding">Проброс портов</a>
                     <a class="nav-link" href="#rules">Требования к коду</a>
                     <a class="nav-link" href="#env">Переменные окружения</a>
-                    <a class="nav-link" href="#example">Пример Flask-приложения</a>
-                    <a class="nav-link" href="#proxy">Как работает прокси</a>
+                    <a class="nav-link" href="#example">Пример приложения</a>
                     <a class="nav-link" href="#lifecycle">Жизненный цикл сервиса</a>
                     <a class="nav-link" href="#users">Пользователи и права</a>
                     <a class="nav-link" href="#troubleshoot">Диагностика проблем</a>
@@ -42,18 +40,18 @@
 
         <div class="card shadow-sm mb-4 border-primary">
             <div class="card-body">
-                <h2 class="card-title mb-2">🛠 Lab Manager — как тут всё устроено</h2>
+                <h2 class="card-title mb-2">Lab Manager</h2>
                 <p class="lead mb-0">
-                    Панель управляет пользовательскими приложениями через <code>systemd</code>,
-                    раздаёт им порты из диапазона <code>5001–6000</code> и выставляет наружу по единому
-                    адресу через встроенный reverse-proxy. Всё под root, всё на systemd, никакой магии.
+                    Панель управляет пользовательскими приложениями через <code>systemd</code>
+                    и пробрасывает их наружу через отдельные TCP-порты с авторизацией.
+                    Приложение ничего не знает о панели — оно видит себя на корне <code>/</code>.
                 </p>
             </div>
         </div>
 
         <!-- ─── Как это работает ─── -->
         <section id="intro" class="help-section mb-5">
-            <h3>🔧 Как это работает</h3>
+            <h3>Как это работает</h3>
             <div class="row g-3">
                 <div class="col-md-4">
                     <div class="card h-100">
@@ -73,7 +71,7 @@
                             <small class="text-muted">
                                 Lab Manager создаёт юнит <code>labapp-&lt;имя&gt;.service</code>
                                 с <code>Restart=always</code>, пробрасывает <code>PORT</code>/<code>HOST</code>
-                                и запускает процесс.
+                                и запускает процесс на <code>127.0.0.1</code>.
                             </small>
                         </div>
                     </div>
@@ -81,11 +79,11 @@
                 <div class="col-md-4">
                     <div class="card h-100">
                         <div class="card-body">
-                            <h6 class="fw-bold">3. Reverse-proxy</h6>
+                            <h6 class="fw-bold">3. Проброс порта</h6>
                             <small class="text-muted">
-                                Внешний запрос <code>/proxy/&lt;имя&gt;/...</code> панель пересылает
-                                на <code>127.0.0.1:&lt;port&gt;</code> с корректными
-                                <code>X-Forwarded-*</code> заголовками.
+                                Панель слушает внешний порт на <code>0.0.0.0</code>,
+                                проверяет cookie авторизации и сырым TCP-сплайсом
+                                перенаправляет трафик на <code>127.0.0.1:&lt;PORT&gt;</code>.
                             </small>
                         </div>
                     </div>
@@ -95,18 +93,18 @@
 
         <!-- ─── Добавление приложения ─── -->
         <section id="add-app" class="help-section mb-5">
-            <h3>➕ Три способа добавить приложение</h3>
+            <h3>Три способа добавить приложение</h3>
 
             <div class="accordion" id="addAcc">
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button" data-bs-toggle="collapse" data-bs-target="#add1">
-                            🌀 Git clone
+                            Git clone
                         </button>
                     </h2>
                     <div id="add1" class="accordion-collapse collapse show" data-bs-parent="#addAcc">
                         <div class="accordion-body">
-                            На главной странице → форма «Клонировать из Git».
+                            На главной странице &rarr; форма &laquo;Клонировать из Git&raquo;.
                             Укажите имя и URL репозитория (<code>https://...</code> или
                             <code>git@...</code>). Панель сделает <span class="kbd">git clone --depth 1</span>,
                             а затем <b>автоматически создаст venv</b> и поставит зависимости
@@ -117,7 +115,7 @@
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#add2">
-                            📦 Загрузка архива
+                            Загрузка архива
                         </button>
                     </h2>
                     <div id="add2" class="accordion-collapse collapse" data-bs-parent="#addAcc">
@@ -132,15 +130,14 @@
                 <div class="accordion-item">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#add3">
-                            📁 Вручную в файловой системе
+                            Вручную в файловой системе
                         </button>
                     </h2>
                     <div id="add3" class="accordion-collapse collapse" data-bs-parent="#addAcc">
                         <div class="accordion-body">
                             Положите папку в <code>/root/apps/</code> любым удобным способом
-                            (rsync, scp, cp). Она сразу появится на дашборде. В этом случае
-                            нажмите на приложении кнопку <b>«Настроить окружение»</b>, чтобы
-                            панель сама собрала venv.
+                            (rsync, scp, cp). Она сразу появится на дашборде. Нажмите кнопку
+                            &laquo;Настроить окружение&raquo; для создания venv.
                         </div>
                     </div>
                 </div>
@@ -149,7 +146,7 @@
 
         <!-- ─── Авто-venv ─── -->
         <section id="auto-venv" class="help-section mb-5">
-            <h3>⚙️ Автоматическая настройка venv</h3>
+            <h3>Автоматическая настройка venv</h3>
             <div class="card">
                 <div class="card-body">
                     <p>После <b>git clone</b>, <b>загрузки архива</b> или <b>git pull</b> панель выполняет:</p>
@@ -160,12 +157,51 @@
                             <span class="kbd">python3 -m venv venv</span>.</li>
                         <li>Если есть <code>requirements.txt</code> —
                             <span class="kbd">venv/bin/pip install -r requirements.txt</span>.</li>
-                        <li>Результат показывается во flash-сообщении. Таймаут на установку — 10 минут.</li>
                     </ol>
                     <p class="mb-0">
-                        <b>Когда запускать вручную:</b> после ручного обновления кода или при смене
-                        <code>requirements.txt</code> без <code>git pull</code>. Кнопка есть на
-                        странице приложения.
+                        Кнопка &laquo;Настроить окружение&raquo; на странице приложения позволяет
+                        запустить пересборку вручную в любое время.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─── Проброс портов ─── -->
+        <section id="port-forwarding" class="help-section mb-5">
+            <h3>Проброс портов</h3>
+            <div class="card border-info">
+                <div class="card-body">
+                    <p>
+                        Каждому приложению можно назначить <b>внешний порт</b> (1024&ndash;65535).
+                        Lab Manager откроет этот порт на <code>0.0.0.0</code> и будет действовать
+                        как <b>прозрачный TCP-прокси с авторизацией</b>:
+                    </p>
+                    <ol>
+                        <li>Пользователь обращается к <code>http://&lt;host&gt;:&lt;порт&gt;/</code>.</li>
+                        <li>Lab Manager читает HTTP-заголовки и извлекает cookie <code>labmgr_session</code>.</li>
+                        <li>Если сессия валидна и у пользователя есть доступ к приложению — трафик
+                            сырым TCP-splice перенаправляется на <code>127.0.0.1:&lt;PORT&gt;</code>.</li>
+                        <li>Если не авторизован — 302 на страницу логина панели.</li>
+                    </ol>
+
+                    <h6 class="fw-bold mt-3">Почему это работает:</h6>
+                    <ul class="mb-3">
+                        <li><b>Приложение на корне /</b> — никаких префиксов, никаких <code>X-Script-Name</code>.
+                            Любые URL (абсолютные, относительные, JS fetch) работают как есть.</li>
+                        <li><b>Любые протоколы</b> — HTTP/1.1, WebSocket, SSE, chunked encoding.</li>
+                        <li><b>Single Sign-On</b> — cookie <code>labmgr_session</code> по
+                            <a href="https://datatracker.ietf.org/doc/html/rfc6265" target="_blank">RFC 6265</a>
+                            не привязана к порту, поэтому браузер автоматически отправляет её на любой порт
+                            того же хоста. Войти в панель достаточно один раз.</li>
+                        <li><b>Изоляция</b> — cookies приложений не пересекаются (разные порты), а
+                            cookie панели (<code>labmgr_session</code>) имеет уникальное имя.</li>
+                    </ul>
+
+                    <h6 class="fw-bold">Настройка:</h6>
+                    <p class="mb-0">
+                        Страница приложения &rarr; карточка &laquo;Внешний порт&raquo; &rarr;
+                        ввести номер &rarr; &laquo;Включить&raquo;. Внешний порт не должен совпадать
+                        с внутренним портом приложения и портом панели (по умолчанию 80).
                     </p>
                 </div>
             </div>
@@ -173,58 +209,48 @@
 
         <!-- ─── Требования к коду ─── -->
         <section id="rules" class="help-section mb-5">
-            <h3>📋 Требования к коду приложения</h3>
+            <h3>Требования к коду приложения</h3>
 
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <div class="card h-100 border-success">
-                        <div class="card-header bg-success text-white">✅ Обязательно</div>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item">
-                                <b>Слушать host/порт из env:</b><br>
-                                <code>host = "127.0.0.1"</code><br>
-                                <code>port = int(os.environ["PORT"])</code>
-                            </li>
-                            <li class="list-group-item">
-                                <b>Отключить reloader:</b> <code>debug=False, use_reloader=False</code>.
-                                С reloader systemd получает «не тот» pid и не может штатно остановить процесс.
-                            </li>
-                            <li class="list-group-item">
-                                <b>Абсолютные пути к файлам:</b><br>
-                                <code>BASE_DIR = os.path.dirname(os.path.abspath(__file__))</code><br>
-                                WorkingDirectory у сервиса задан правильно, но всё равно — привычка полезная.
-                            </li>
-                            <li class="list-group-item">
-                                <b>Относительные URL на фронте:</b>
-                                <code>fetch('api/x')</code>, а не <code>fetch('/api/x')</code>.
-                                Приложение живёт под префиксом <code>/proxy/&lt;name&gt;/</code>.
-                            </li>
-                        </ul>
+            <div class="card">
+                <div class="card-body">
+                    <p>Благодаря прозрачному пробросу портов требования минимальны:</p>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="text-success fw-bold">Обязательно</h6>
+                            <ul>
+                                <li>Слушать <code>host</code> и <code>port</code> из env:
+<pre class="code-block mb-2"><span class="kw">import</span> os
+host = os.environ.get(<span class="str">"HOST"</span>, <span class="str">"127.0.0.1"</span>)
+port = <span class="kw">int</span>(os.environ[<span class="str">"PORT"</span>])
+app.run(host=host, port=port)</pre>
+                                </li>
+                                <li>Отключить reloader:
+                                    <code>debug=False, use_reloader=False</code>
+                                    — иначе systemd не сможет штатно остановить процесс.</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-success fw-bold">Рекомендуется</h6>
+                            <ul>
+                                <li>Абсолютные пути к файлам:
+                                    <code>BASE_DIR = os.path.dirname(os.path.abspath(__file__))</code></li>
+                            </ul>
+                            <h6 class="text-danger fw-bold mt-3">Нельзя</h6>
+                            <ul>
+                                <li>Хардкодить порт.</li>
+                                <li>Биндить <code>0.0.0.0</code> — только <code>127.0.0.1</code>
+                                    (через переменную <code>HOST</code>).</li>
+                                <li>Переопределять <code>PORT</code>, <code>HOST</code>,
+                                    <code>PYTHONUNBUFFERED</code> в env-переменных.</li>
+                            </ul>
+                        </div>
                     </div>
-                </div>
 
-                <div class="col-md-6">
-                    <div class="card h-100 border-danger">
-                        <div class="card-header bg-danger text-white">❌ Нельзя</div>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item">
-                                <span class="rule-bad">Хардкодить порт</span> —
-                                приходит <code>PORT</code> от менеджера, диапазон 5001-6000.
-                            </li>
-                            <li class="list-group-item">
-                                <span class="rule-bad">Биндить 0.0.0.0</span> —
-                                приложение должно быть доступно только через reverse-proxy.
-                                Используйте <code>127.0.0.1</code>.
-                            </li>
-                            <li class="list-group-item">
-                                <span class="rule-bad">Абсолютные URL на фронте:</span>
-                                <code>fetch('/api/x')</code> уйдёт в корень панели, а не в приложение.
-                            </li>
-                            <li class="list-group-item">
-                                <span class="rule-bad">Переопределять PORT/HOST/PYTHONUNBUFFERED</span>
-                                в пользовательских env-переменных — эти имена зарезервированы.
-                            </li>
-                        </ul>
+                    <div class="alert alert-info mt-2 mb-0 small">
+                        Никаких ограничений на URL в HTML/JS: абсолютные пути (<code>fetch('/api/x')</code>),
+                        относительные, любые фреймворки — всё работает, потому что приложение видит себя
+                        на корне <code>/</code> собственного порта.
                     </div>
                 </div>
             </div>
@@ -232,29 +258,27 @@
 
         <!-- ─── Env ─── -->
         <section id="env" class="help-section mb-5">
-            <h3>🔑 Переменные окружения</h3>
-            <p>Lab Manager автоматически прокидывает три переменные, трогать которые нельзя:</p>
+            <h3>Переменные окружения</h3>
             <table class="table table-sm table-bordered">
                 <thead class="table-light">
                     <tr><th>Переменная</th><th>Значение</th><th>Зачем</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td><code>PORT</code></td><td>свободный порт 5001-6000</td><td>приложение слушает на нём</td></tr>
-                    <tr><td><code>HOST</code></td><td><code>127.0.0.1</code></td><td>никакого выхода наружу в обход прокси</td></tr>
+                    <tr><td><code>PORT</code></td><td>5001&ndash;6000 (авто)</td><td>приложение слушает на этом порту</td></tr>
+                    <tr><td><code>HOST</code></td><td><code>127.0.0.1</code></td><td>доступ только через проброс</td></tr>
                     <tr><td><code>PYTHONUNBUFFERED</code></td><td><code>1</code></td><td>логи идут в journalctl без задержек</td></tr>
                 </tbody>
             </table>
             <p class="mb-0">
                 Собственные переменные (<code>DB_URL</code>, <code>API_KEY</code> и т.д.)
-                добавляются в форме «Создать/Редактировать сервис». Имя должно соответствовать
+                добавляются в форме &laquo;Создать/Редактировать сервис&raquo;. Имя:
                 <code>^[A-Z_][A-Z0-9_]*$</code>.
             </p>
         </section>
 
         <!-- ─── Пример ─── -->
         <section id="example" class="help-section mb-5">
-            <h3>🧪 Минимальное Flask-приложение</h3>
-            <p class="text-muted">Закинь этот <code>app.py</code> + пустой <code>requirements.txt</code> с <code>flask</code>, и оно заведётся из коробки:</p>
+            <h3>Минимальное Flask-приложение</h3>
 <pre class="code-block"><span class="comment"># app.py</span>
 <span class="kw">import</span> os
 <span class="kw">from</span> flask <span class="kw">import</span> Flask, jsonify
@@ -283,66 +307,52 @@ flask&gt;=3.0
 </pre>
         </section>
 
-        <!-- ─── Proxy ─── -->
-        <section id="proxy" class="help-section mb-5">
-            <h3>🔀 Как работает reverse-proxy</h3>
-            <div class="card">
-                <div class="card-body">
-                    <p>
-                        Запрос <code>GET /proxy/myapp/api/users?id=1</code> превращается в
-                        <code>GET http://127.0.0.1:&lt;PORT&gt;/api/users?id=1</code> и
-                        ретранслируется обратно клиенту.
-                    </p>
-                    <p>В заголовки приложения панель добавляет:</p>
-                    <ul>
-                        <li><code>X-Script-Name: /proxy/myapp</code> — если фреймворк умеет уважать (Flask + <code>ProxyFix</code>), он сам построит корректные URL.</li>
-                        <li><code>X-Forwarded-For</code>, <code>X-Forwarded-Proto</code>, <code>X-Forwarded-Host</code>.</li>
-                    </ul>
-                    <p class="mb-0">
-                        <b>Важно:</b> если приложение отдаёт редирект на <code>/login</code>,
-                        панель переписывает <code>Location</code> на <code>/proxy/myapp/login</code>
-                        автоматически. Но HTML с захардкоженными <code>&lt;a href="/..."&gt;</code>
-                        переписать нельзя — поэтому используйте относительные URL.
-                    </p>
-                </div>
-            </div>
-        </section>
-
         <!-- ─── Жизненный цикл ─── -->
         <section id="lifecycle" class="help-section mb-5">
-            <h3>♻️ Жизненный цикл сервиса</h3>
+            <h3>Жизненный цикл сервиса</h3>
             <ol>
-                <li><b>Создание:</b> кнопка «Создать сервис» → генерируется <code>/etc/systemd/system/labapp-&lt;name&gt;.service</code> → <code>daemon-reload</code> → <code>enable</code> → <code>start</code>.</li>
-                <li><b>Редактирование:</b> меняется unit-файл, если сервис был активен — выполняется <code>restart</code>.</li>
+                <li><b>Создание:</b> &laquo;Создать сервис&raquo; &rarr; генерируется unit-файл
+                    <code>labapp-&lt;name&gt;.service</code> &rarr; <code>daemon-reload</code>
+                    &rarr; <code>enable</code> &rarr; <code>start</code>.</li>
+                <li><b>Настройка внешнего порта:</b> &laquo;Включить&raquo; &rarr; TCP-форвардер
+                    поднимается на указанном порту. Значение сохраняется в БД и восстанавливается
+                    при перезапуске панели.</li>
+                <li><b>Редактирование:</b> меняется unit-файл, если сервис был активен
+                    &mdash; автоматический <code>restart</code>.</li>
                 <li><b>Старт/стоп/рестарт:</b> прямые команды <code>systemctl</code>.</li>
                 <li><b>Удаление:</b>
                     <ol class="mt-1">
+                        <li>Останавливается TCP-форвардер (освобождает внешний порт).</li>
                         <li><code>systemctl stop</code> (graceful, до 10 сек).</li>
                         <li>Ожидание перехода в inactive.</li>
-                        <li>Если процесс ещё жив — SIGTERM + SIGKILL по всему дереву через <code>psutil</code>.</li>
-                        <li>Safety-net: <code>kill</code> всех, кто ещё висит на назначенном порту.</li>
-                        <li><code>disable</code>, <code>reset-failed</code>, удаление unit-файла, <code>daemon-reload</code>.</li>
+                        <li>Если процесс ещё жив &mdash; SIGKILL по всему дереву через <code>psutil</code>.</li>
+                        <li>Safety-net: <code>kill</code> всех, кто висит на назначенном порту.</li>
+                        <li><code>disable</code>, <code>reset-failed</code>, удаление unit-файла.</li>
                     </ol>
                 </li>
-                <li><b>Диагностика:</b> кнопка «Диагностика» запускает приложение на 5 секунд в изолированном процессе и собирает stderr. Если упало сразу — получите трассировку без необходимости лезть в journalctl.</li>
+                <li><b>Диагностика:</b> запускает приложение на 5 секунд в изолированном процессе
+                    и собирает stderr.</li>
             </ol>
         </section>
 
         <!-- ─── Пользователи ─── -->
         <section id="users" class="help-section mb-5">
-            <h3>👥 Пользователи и права доступа</h3>
+            <h3>Пользователи и права доступа</h3>
             <ul>
-                <li><b>Администратор</b> — видит полный дашборд, создаёт/правит/удаляет приложения, управляет пользователями.</li>
-                <li><b>Обычный пользователь</b> — видит только те приложения, на которые ему выдан доступ. На странице «Мои приложения» он кликает «Открыть» и попадает в приложение через прокси. Никаких кнопок управления ему не показывается.</li>
-                <li>Первый админ создаётся из переменной <code>ADMIN_PASSWORD</code> в <code>.env</code> при первом старте.</li>
-                <li>Удалить последнего администратора или самого себя нельзя — панель не даст.</li>
+                <li><b>Администратор</b> &mdash; видит полный дашборд, создаёт/правит/удаляет
+                    приложения, управляет пользователями, назначает внешние порты.</li>
+                <li><b>Обычный пользователь</b> &mdash; видит только те приложения, на которые
+                    ему выдан доступ. Может открывать приложения через назначенные внешние порты.
+                    Никаких кнопок управления.</li>
+                <li>Первый админ создаётся из переменной <code>ADMIN_PASSWORD</code> в <code>.env</code>.</li>
+                <li>Удалить последнего администратора или самого себя нельзя.</li>
                 <li>При удалении приложения все связанные права автоматически очищаются.</li>
             </ul>
         </section>
 
         <!-- ─── Диагностика ─── -->
         <section id="troubleshoot" class="help-section mb-5">
-            <h3>🩺 Что делать, если не работает</h3>
+            <h3>Что делать, если не работает</h3>
 
             <div class="card">
                 <div class="table-responsive">
@@ -353,33 +363,33 @@ flask&gt;=3.0
                         <tbody>
                             <tr>
                                 <td>Сервис сразу падает</td>
-                                <td>«Диагностика» на странице приложения</td>
-                                <td>Читайте stderr — чаще всего это <code>ModuleNotFoundError</code>. Нажмите «Настроить окружение».</td>
+                                <td>&laquo;Диагностика&raquo; на странице приложения</td>
+                                <td>Читайте stderr. Обычно <code>ModuleNotFoundError</code> &mdash; нажмите
+                                    &laquo;Настроить окружение&raquo;.</td>
                             </tr>
                             <tr>
-                                <td>502 Bad Gateway в прокси</td>
-                                <td>Статус в панели + «Логи»</td>
-                                <td>Приложение не слушает на <code>$PORT</code> или забиндилось в <code>0.0.0.0</code> и падает из-за конфликта.</td>
+                                <td>Не открывается на внешнем порту</td>
+                                <td>Проверьте, что порт назначен и сервис запущен</td>
+                                <td>Включите внешний порт на странице приложения. Если порт занят &mdash;
+                                    выберите другой.</td>
                             </tr>
                             <tr>
-                                <td>Относительные пути сломали фронт</td>
-                                <td>DevTools → Network</td>
-                                <td>Запросы уходят на <code>/api/...</code> вместо <code>/proxy/name/api/...</code> — уберите ведущий слэш.</td>
+                                <td>302 на логин при каждом запросе</td>
+                                <td>&mdash;</td>
+                                <td>Не авторизованы. Зайдите в панель (<code>:80</code>), залогиньтесь
+                                    &mdash; cookie подхватится автоматически на всех портах.</td>
                             </tr>
                             <tr>
                                 <td>Изменения в коде не подхватываются</td>
-                                <td>—</td>
-                                <td>Нажмите «Restart». <code>Restart=always</code> перезапускает только при падении, не при изменении файлов.</td>
+                                <td>&mdash;</td>
+                                <td>Нажмите &laquo;Restart&raquo;. <code>Restart=always</code> перезапускает
+                                    только при падении, не при изменении файлов.</td>
                             </tr>
                             <tr>
-                                <td>«venv сломан» или <code>Permission denied</code></td>
+                                <td>&laquo;venv сломан&raquo; или <code>Permission denied</code></td>
                                 <td>Flash-сообщение</td>
-                                <td>Кнопка «Настроить окружение» — панель снесёт и пересоберёт venv.</td>
-                            </tr>
-                            <tr>
-                                <td>После удаления процесс всё ещё висит</td>
-                                <td><code>ss -tlnp</code>, <code>ps aux</code></td>
-                                <td>С версии 2 это невозможно: удаление бьёт дерево процессов и освобождает порт. Если всё-таки — шлите баг.</td>
+                                <td>Кнопка &laquo;Настроить окружение&raquo; &mdash; панель снесёт и
+                                    пересоберёт venv.</td>
                             </tr>
                         </tbody>
                     </table>

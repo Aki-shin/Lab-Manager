@@ -40,11 +40,3 @@ def admin_required(f):
     return wrapper
 
 
-def require_app_access(app_name):
-    """Проверка прав на конкретное приложение (для /proxy)."""
-    user = current_user()
-    if not user:
-        return None, redirect(url_for('main.login', next=request.url))
-    if not db.user_can_access_app(user, app_name):
-        abort(403)
-    return user, None
