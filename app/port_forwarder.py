@@ -128,9 +128,9 @@ class PortForwarder:
 
             # 2. Проверяем авторизацию через cookie labmgr_session
             cookie_header = headers.get('cookie', '')
-            authorized = self._is_authorized(cookie_header)
+            user_info = self._get_authorized_user(cookie_header)
 
-            if not authorized:
+            if not user_info:
                 self._send_login_redirect(client, request_line, headers)
                 return
 
@@ -150,7 +150,8 @@ class PortForwarder:
                 self._send_simple(client, 502, f"Приложение недоступно: {e}")
                 return
 
-            # 4. Отправляем уже прочитанные байты (header + возможный начало body)
+            # 4. Инжектируем заголовки идентификации и отправляем upstream
+            buf = self._inject_identity_headers(buf, header_end, user_info)
             upstream.sendall(buf)
 
             # 5. Двунаправленный splice до закрытия
@@ -173,10 +174,10 @@ class PortForwarder:
 
     # -------------------------------------------------------- authorization
 
-    def _is_authorized(self, cookie_header):
-        """Валидирует labmgr_session через Flask и проверяет права пользователя."""
+    def _get_authorized_user(self, cookie_header):
+        """Валидирует labmgr_session и возвращает dict пользователя или None."""
         if not cookie_header:
-            return False
+            return None
         try:
             with self.flask_app.test_request_context(
                 path='/', headers={'Cookie': cookie_header}
@@ -184,14 +185,25 @@ class PortForwarder:
                 from flask import session as flask_session
                 user_id = flask_session.get('user_id')
                 if not user_id:
-                    return False
+                    return None
                 user = db.get_user_by_id(user_id)
                 if not user:
-                    return False
-                return db.user_can_access_app(user, self.name)
+                    return None
+                if not db.user_can_access_app(user, self.name):
+                    return None
+                return user
         except Exception as e:
             log.debug(f"[forwarder] session check failed: {e}")
-            return False
+            return None
+
+    def _inject_identity_headers(self, buf, header_end, user):
+        """Вставляет X-Remote-User и X-Remote-Name перед \\r\\n\\r\\n."""
+        username = user.get('username', '')
+        full_name = user.get('full_name', '')
+        extra = f"X-Remote-User: {username}\r\nX-Remote-Name: {full_name}\r\n"
+        # Вставляем перед завершающим \r\n\r\n
+        insert_pos = header_end - 2  # перед последним \r\n
+        return buf[:insert_pos] + extra.encode('utf-8') + buf[insert_pos:]
 
     # -------------------------------------------------------------- helpers
 
@@ -293,11 +305,18 @@ def init(flask_app):
     """Вызывается при старте Lab Manager. Поднимает все сохранённые форвардеры."""
     global _flask_app
     _flask_app = flask_app
-    for name, port in db.list_external_ports():
+    try:
+        ports = db.list_external_ports()
+    except Exception as e:
+        log.warning(f"[forwarder] не удалось прочитать external_ports из БД: {e}")
+        return
+
+    for name, port in ports:
         try:
             _start_unlocked(name, int(port))
+            print(f"[forwarder] восстановлен: {name} → 0.0.0.0:{port}")
         except Exception as e:
-            log.warning(f"[forwarder] не удалось запустить {name} на порту {port}: {e}")
+            print(f"[forwarder] ОШИБКА при запуске {name} на порту {port}: {e}")
 
 
 def _start_unlocked(name, external_port):

@@ -197,7 +197,28 @@
                             cookie панели (<code>labmgr_session</code>) имеет уникальное имя.</li>
                     </ul>
 
-                    <h6 class="fw-bold">Настройка:</h6>
+                    <h6 class="fw-bold">Идентификация пользователя:</h6>
+                    <p>
+                        При проксировании Lab Manager автоматически добавляет в HTTP-запрос заголовки:
+                    </p>
+                    <table class="table table-sm table-bordered mb-3">
+                        <thead class="table-light">
+                            <tr><th>Заголовок</th><th>Значение</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>X-Remote-User</code></td><td>Логин пользователя в Lab Manager</td></tr>
+                            <tr><td><code>X-Remote-Name</code></td><td>ФИО пользователя (если заполнено)</td></tr>
+                        </tbody>
+                    </table>
+                    <p>
+                        Это <b>ненавязчиво</b>: приложение может игнорировать эти заголовки.
+                        Но если нужно персонализировать интерфейс — просто читайте их:
+                    </p>
+<pre class="code-block"><span class="comment"># Flask</span>
+user = request.headers.get(<span class="str">"X-Remote-User"</span>, <span class="str">"anonymous"</span>)
+name = request.headers.get(<span class="str">"X-Remote-Name"</span>, <span class="str">""</span>)</pre>
+
+                    <h6 class="fw-bold mt-3">Настройка:</h6>
                     <p class="mb-0">
                         Страница приложения &rarr; карточка &laquo;Внешний порт&raquo; &rarr;
                         ввести номер &rarr; &laquo;Включить&raquo;. Внешний порт не должен совпадать

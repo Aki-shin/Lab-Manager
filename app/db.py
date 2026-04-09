@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    full_name TEXT NOT NULL DEFAULT '',
     is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -39,11 +40,19 @@ def get_db():
         conn.close()
 
 
+def _migrate(conn):
+    """Добавляет колонки, которых нет в старых версиях БД."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if 'full_name' not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
+
+
 def init_db():
     """Создаёт таблицы и bootstrap-админа при первом запуске."""
     os.makedirs(os.path.dirname(Config.DB_PATH), exist_ok=True)
     with get_db() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
     bootstrap_admin()
 
 
@@ -78,21 +87,21 @@ def get_user_by_id(user_id):
 def list_users():
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, username, is_admin, created_at FROM users ORDER BY username"
+            "SELECT id, username, full_name, is_admin, created_at FROM users ORDER BY username"
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def create_user(username, password_hash, is_admin=False):
+def create_user(username, password_hash, is_admin=False, full_name=''):
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            (username, password_hash, 1 if is_admin else 0)
+            "INSERT INTO users (username, password_hash, is_admin, full_name) VALUES (?, ?, ?, ?)",
+            (username, password_hash, 1 if is_admin else 0, full_name)
         )
         return cur.lastrowid
 
 
-def update_user(user_id, username=None, password_hash=None, is_admin=None):
+def update_user(user_id, username=None, password_hash=None, is_admin=None, full_name=None):
     fields, values = [], []
     if username is not None:
         fields.append("username = ?")
@@ -103,6 +112,9 @@ def update_user(user_id, username=None, password_hash=None, is_admin=None):
     if is_admin is not None:
         fields.append("is_admin = ?")
         values.append(1 if is_admin else 0)
+    if full_name is not None:
+        fields.append("full_name = ?")
+        values.append(full_name)
     if not fields:
         return
     values.append(user_id)

@@ -2,7 +2,7 @@
 {% block title %}Пользователи — Lab Manager{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>👥 Пользователи</h2>
+    <h2>Пользователи</h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal">
         + Создать пользователя
     </button>
@@ -14,6 +14,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Логин</th>
+                    <th>ФИО</th>
                     <th>Роль</th>
                     <th>Создан</th>
                     <th class="text-end">Действия</th>
@@ -23,6 +24,7 @@
             {% for u in users %}
                 <tr>
                     <td><strong>{{ u.username }}</strong></td>
+                    <td>{{ u.full_name or '—' }}</td>
                     <td>
                         {% if u.is_admin %}
                             <span class="badge bg-warning text-dark">администратор</span>
@@ -35,46 +37,54 @@
                         {% if not u.is_admin %}
                         <a href="{{ url_for('main.users_permissions', user_id=u.id) }}" class="btn btn-sm btn-outline-primary">Права</a>
                         {% endif %}
-                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editUserModal{{ u.id }}">Изменить</button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                data-bs-toggle="modal" data-bs-target="#editUserModal{{ u.id }}">Изменить</button>
                         <form method="post" action="{{ url_for('main.users_delete', user_id=u.id) }}" class="d-inline"
                               onsubmit="return confirm('Удалить пользователя {{ u.username }}?');">
                             <button type="submit" class="btn btn-sm btn-outline-danger">Удалить</button>
                         </form>
                     </td>
                 </tr>
-
-                <!-- Modal: Edit user -->
-                <div class="modal fade" id="editUserModal{{ u.id }}" tabindex="-1">
-                    <div class="modal-dialog">
-                        <form method="post" action="{{ url_for('main.users_edit', user_id=u.id) }}" class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Изменить: {{ u.username }}</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                <div class="mb-3">
-                                    <label class="form-label">Новый пароль <small class="text-muted">(оставьте пустым, чтобы не менять)</small></label>
-                                    <input type="password" name="password" class="form-control" autocomplete="new-password">
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="is_admin" id="is_admin_{{ u.id }}" {% if u.is_admin %}checked{% endif %}>
-                                    <label class="form-check-label" for="is_admin_{{ u.id }}">Администратор</label>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                                <button type="submit" class="btn btn-primary">Сохранить</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
             {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- Modal: Create user -->
+<!-- Модалки редактирования — ВЫНЕСЕНЫ ЗА таблицу -->
+{% for u in users %}
+<div class="modal fade" id="editUserModal{{ u.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" action="{{ url_for('main.users_edit', user_id=u.id) }}" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Изменить: {{ u.username }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">ФИО</label>
+                    <input type="text" name="full_name" class="form-control" value="{{ u.full_name or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Новый пароль <small class="text-muted">(оставьте пустым, чтобы не менять)</small></label>
+                    <input type="password" name="password" class="form-control" autocomplete="new-password">
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_admin"
+                           id="is_admin_{{ u.id }}" {% if u.is_admin %}checked{% endif %}>
+                    <label class="form-check-label" for="is_admin_{{ u.id }}">Администратор</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Модалка создания -->
 <div class="modal fade" id="createUserModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="post" action="{{ url_for('main.users_create') }}" class="modal-content">
@@ -87,6 +97,10 @@
                     <label class="form-label">Логин</label>
                     <input type="text" name="username" class="form-control" required pattern="[a-zA-Z0-9_.\-]{3,32}">
                     <small class="text-muted">3-32 символа: a-z, 0-9, _, -, .</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">ФИО</label>
+                    <input type="text" name="full_name" class="form-control" placeholder="Иванов Иван Иванович">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Пароль</label>

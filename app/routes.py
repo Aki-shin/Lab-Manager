@@ -6,7 +6,6 @@ from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
     Response, stream_with_context, jsonify, abort  # noqa: F401
 )
-from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 from .config import Config
 from . import db
@@ -21,6 +20,21 @@ from .services import (
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
+
+
+def _safe_name(name):
+    """Санитизация имени приложения: запрет path traversal, но пробелы допустимы."""
+    if not name:
+        return None
+    # Убираем path-компоненты — только последний сегмент
+    name = name.replace('\\', '/').split('/')[-1]
+    # Запрет пустого, точки, двойных точек
+    if not name or name in ('.', '..'):
+        return None
+    # Запрет NUL-байтов
+    if '\x00' in name:
+        return None
+    return name
 
 
 def is_safe_redirect_url(url):
@@ -119,7 +133,7 @@ def help_page():
 @bp.route('/app/<name>')
 @admin_required
 def app_detail(name):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     app_data = get_app_status(safe_name, with_metrics=True)
     app_data['external_port'] = db.get_external_port(safe_name)
 
@@ -172,7 +186,7 @@ def _resolve_entry_cmd(app_path, entry_cmd):
 @bp.route('/create/<name>', methods=['POST'])
 @admin_required
 def create_service(name):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     app_path = os.path.join(Config.APPS_DIR, safe_name)
 
     custom_port = request.form.get('custom_port')
@@ -201,7 +215,7 @@ def create_service(name):
 @bp.route('/edit/<name>', methods=['GET', 'POST'])
 @admin_required
 def edit_service(name):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     app_path = os.path.join(Config.APPS_DIR, safe_name)
     config = parse_service_file(safe_name)
 
@@ -231,7 +245,7 @@ def edit_service(name):
 @bp.route('/action/<name>/<action>', methods=['POST'])
 @admin_required
 def service_action(name, action):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     if action not in ['start', 'stop', 'restart']:
         flash("Недопустимое действие", "warning")
         return redirect(url_for('main.app_detail', name=safe_name))
@@ -244,7 +258,7 @@ def service_action(name, action):
 @bp.route('/delete/<name>', methods=['POST'])
 @admin_required
 def delete_service(name):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
 
     # Сначала останавливаем форвардер, если был, иначе порт останется занят
     port_forwarder.stop_forwarder(safe_name)
@@ -263,7 +277,7 @@ def delete_service(name):
 @bp.route('/diagnose/<name>')
 @admin_required
 def diagnose_app(name):
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     report = run_diagnostic_test(safe_name)
     return render_template("diagnostic_result.html", name=safe_name, report=report)
 
@@ -343,7 +357,7 @@ def git_clone():
 @admin_required
 def git_pull(name):
     """git pull для существующего приложения + обновление зависимостей."""
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     ok, msg = git_pull_app(safe_name)
     flash(msg, "success" if ok else "danger")
     if ok:
@@ -356,7 +370,7 @@ def git_pull(name):
 @admin_required
 def setup_env(name):
     """Ручная (пере)установка venv и зависимостей приложения."""
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     ok, msg = setup_app_environment(safe_name)
     flash(f"Окружение: {msg}", "success" if ok else "danger")
     return redirect(url_for('main.app_detail', name=safe_name))
@@ -380,7 +394,7 @@ def set_external_port(name):
     Настраивает прозрачный внешний порт для приложения.
     Пустое поле или 'off' → отключить форвардер.
     """
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     raw = (request.form.get('external_port') or '').strip()
 
     # Выключение
@@ -441,7 +455,7 @@ def set_external_port(name):
 @admin_required
 def logs_stream(name):
     """Server-Sent Events: стрим логов в реальном времени."""
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
 
     def generate():
         for chunk in stream_app_logs(safe_name):
@@ -463,7 +477,7 @@ def logs_stream(name):
 @admin_required
 def api_app_metrics(name):
     """JSON с метриками приложения для обновления на странице."""
-    safe_name = secure_filename(name)
+    safe_name = _safe_name(name)
     data = get_app_status(safe_name, with_metrics=True)
     return jsonify(data)
 
@@ -504,7 +518,8 @@ def users_create():
         flash('Пользователь с таким именем уже существует', 'danger')
         return redirect(url_for('main.users_list'))
 
-    db.create_user(username, generate_password_hash(password), is_admin=is_admin)
+    full_name = (request.form.get('full_name') or '').strip()
+    db.create_user(username, generate_password_hash(password), is_admin=is_admin, full_name=full_name)
     flash(f'Пользователь {username} создан', 'success')
     return redirect(url_for('main.users_list'))
 
@@ -518,8 +533,8 @@ def users_edit(user_id):
 
     new_password = request.form.get('password') or ''
     is_admin_form = request.form.get('is_admin')
-    # Чекбокс может отсутствовать — значит снимаем флаг
     new_is_admin = bool(is_admin_form)
+    full_name = (request.form.get('full_name') or '').strip()
 
     password_hash = None
     if new_password:
@@ -533,7 +548,7 @@ def users_edit(user_id):
         flash('Нельзя снять права у последнего администратора', 'danger')
         return redirect(url_for('main.users_list'))
 
-    db.update_user(user_id, password_hash=password_hash, is_admin=new_is_admin)
+    db.update_user(user_id, password_hash=password_hash, is_admin=new_is_admin, full_name=full_name)
     flash('Пользователь обновлён', 'success')
     return redirect(url_for('main.users_list'))
 
