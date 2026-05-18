@@ -41,10 +41,28 @@
 </div>
 {% endif %}
 
+{% if update_state and update_state.self and update_state.self.update_available %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center shadow-sm">
+    <span>⬆ <strong>Доступно обновление Lab Manager</strong>
+        ({{ update_state.self.behind }} коммит(ов) позади).</span>
+    <a href="{{ url_for('main.system_page') }}" class="btn btn-sm btn-warning">Перейти к обновлению</a>
+</div>
+{% endif %}
+
 <div class="card shadow-sm mb-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h4 class="mb-0">Ваши приложения</h4>
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div>
+            <h4 class="mb-0 d-inline-block">Ваши приложения</h4>
+            {% if update_state and update_state.running %}
+                <span class="text-muted small ms-2">🔄 проверка обновлений идёт…</span>
+            {% elif update_state and update_state.checked_at %}
+                <span class="text-muted small ms-2">обновления проверены: {{ update_state.checked_at }}</span>
+            {% endif %}
+        </div>
+        <div>
+            <form action="{{ url_for('main.check_updates') }}" method="post" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">🔄 Проверить обновления</button>
+            </form>
             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">📦 Загрузить ZIP</button>
             <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">🔗 Git clone</button>
         </div>
@@ -54,6 +72,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Имя</th>
+                    <th>Версия</th>
                     <th>Статус</th>
                     <th>Health</th>
                     <th>Порт</th>
@@ -69,6 +88,25 @@
                     <td class="fw-bold">
                         {{ app.name }}
                         {% if app.is_git %}<span class="badge bg-light text-dark border" style="font-size: 0.65em;">git</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if app.is_git %}
+                            {% set u = app.update %}
+                            {% if u and u.commit %}
+                                <span class="font-monospace small text-muted">{{ u.commit }}</span>
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                            {% if u and u.update_available %}
+                                <span class="badge bg-warning text-dark ms-1" title="Доступно обновление в репозитории">⬆ update</span>
+                            {% elif u and u.error %}
+                                <span class="badge bg-light text-muted border ms-1" title="{{ u.error }}">?</span>
+                            {% elif u %}
+                                <span class="badge bg-light text-success border ms-1" title="Актуальная версия">✓</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% if app.has_service %}
@@ -126,7 +164,7 @@
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="8" class="text-center py-5 text-muted">Папка пуста. Загрузите архив или клонируйте git-репозиторий.</td></tr>
+                <tr><td colspan="9" class="text-center py-5 text-muted">Папка пуста. Загрузите архив или клонируйте git-репозиторий.</td></tr>
             {% endfor %}
             </tbody>
         </table>

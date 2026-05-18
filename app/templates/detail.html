@@ -206,7 +206,7 @@
     </div>
 
     <div class="col-md-7">
-        <div class="card shadow-sm h-100">
+        <div class="card shadow-sm">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                 <span>📋 Логи <span id="streamStatus" class="badge bg-secondary ms-2" style="font-size: 0.65em;">offline</span></span>
                 <div class="form-check form-switch text-white">
@@ -214,9 +214,10 @@
                     <label class="form-check-label small" for="streamToggle">Live</label>
                 </div>
             </div>
-            <div class="card-body bg-dark p-0 d-flex flex-column">
-                <div class="terminal flex-grow-1 m-0" id="logsBox"
-                     style="max-height:none; min-height:420px; border-radius:0;">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
+            <div class="card-body bg-dark p-0">
+                {# Высота ограничена окном — длинные логи прокручиваются внутри блока #}
+                <div class="terminal m-0" id="logsBox"
+                     style="height: calc(100vh - 240px); min-height: 320px; max-height: calc(100vh - 240px); border-radius: 0;">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
             </div>
         </div>
     </div>

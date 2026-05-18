@@ -91,7 +91,7 @@
       <div class="card-header bg-dark text-light">Обновление через GitHub</div>
       <div class="card-body">
 
-        <form action="{{ url_for('main.system_check') }}" method="post" class="mb-3">
+        <form action="{{ url_for('main.system_check') }}" method="post" class="mb-2">
           <button type="submit" class="btn btn-outline-primary">
             🔄 Проверить обновления
           </button>
@@ -99,6 +99,21 @@
             Выполняет <code>git fetch</code> и сравнивает с <code>origin</code>.
           </span>
         </form>
+
+        {% if auto_state and auto_state.checked_at %}
+        <p class="text-muted small mb-3">
+          Автопроверка: {{ auto_state.checked_at }} —
+          {% if auto_state.self and auto_state.self.error %}
+            ошибка: {{ auto_state.self.error }}
+          {% elif auto_state.self and auto_state.self.update_available %}
+            <span class="text-warning">доступно обновлений: {{ auto_state.self.behind }}</span>
+          {% else %}
+            обновлений нет
+          {% endif %}
+        </p>
+        {% elif auto_state and auto_state.running %}
+        <p class="text-muted small mb-3">Автопроверка обновлений выполняется…</p>
+        {% endif %}
 
         {% if update_info %}
           {% if update_info.error %}

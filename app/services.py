@@ -774,6 +774,59 @@ def update_app_with_rollback(name):
     return False, msg, report
 
 
+def check_app_updates(name):
+    """
+    Проверяет наличие обновлений приложения в git (git fetch + сравнение SHA).
+
+    Сравнение по SHA, а не по `rev-list --count`, надёжно работает и на
+    shallow-клонах (--depth 1), где полной истории между HEAD и origin нет.
+
+    Возвращает dict: {is_git, commit, branch, update_available, error}.
+    """
+    app_path = os.path.join(Config.APPS_DIR, name)
+    if not os.path.isdir(os.path.join(app_path, ".git")):
+        return {"is_git": False, "commit": None, "branch": None,
+                "update_available": False, "error": None}
+
+    res = {"is_git": True, "commit": None, "branch": None,
+           "update_available": False, "error": None}
+
+    def _g(args, timeout=60):
+        return subprocess.run(
+            ["git", "-C", app_path] + args,
+            capture_output=True, text=True, timeout=timeout, env=_git_env()
+        )
+
+    try:
+        head = _git_app_head(app_path)
+        res["commit"] = head[:7] if head else None
+
+        br = _g(["rev-parse", "--abbrev-ref", "HEAD"])
+        branch = br.stdout.strip() if br.returncode == 0 else ""
+        if not branch or branch == "HEAD":
+            branch = "main"
+        res["branch"] = branch
+
+        fetch = _g(["fetch", "origin", branch], timeout=120)
+        if fetch.returncode != 0:
+            res["error"] = (fetch.stderr.strip() or "git fetch failed")[:200]
+            return res
+
+        remote = _g(["rev-parse", f"origin/{branch}"])
+        if remote.returncode != 0:
+            res["error"] = (remote.stderr.strip() or "rev-parse failed")[:200]
+            return res
+
+        remote_sha = remote.stdout.strip()
+        if head and remote_sha and head != remote_sha:
+            res["update_available"] = True
+    except subprocess.TimeoutExpired:
+        res["error"] = "таймаут git"
+    except Exception as e:
+        res["error"] = str(e)[:200]
+    return res
+
+
 # --- Загрузка архивов ---
 
 SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9_.-]+$')

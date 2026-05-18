@@ -34,4 +34,8 @@ def create_app():
     from . import port_forwarder
     port_forwarder.init(app)
 
+    # Фоновая автопроверка обновлений (панели и приложений)
+    from . import update_checker
+    update_checker.init(app)
+
     return app

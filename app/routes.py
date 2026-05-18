@@ -21,6 +21,7 @@ from .services import (
 )
 from . import port_forwarder
 from . import self_update
+from . import update_checker
 
 
 def _safe_name(name):
@@ -107,9 +108,11 @@ def index():
                 if os.path.isdir(path):
                     status = get_app_status(item, with_metrics=True)
                     status['external_port'] = db.get_external_port(item)
+                    status['update'] = update_checker.get_app_update(item)
                     apps.append(status)
         system = get_system_stats()
-        return render_template("dashboard.html", apps=apps, system=system)
+        return render_template("dashboard.html", apps=apps, system=system,
+                               update_state=update_checker.get_state())
 
     # Обычный пользователь — только доступные приложения
     allowed = set(db.get_user_permissions(user['id']))
@@ -129,6 +132,15 @@ def index():
 @login_required
 def help_page():
     return render_template("help.html")
+
+
+@bp.route('/check-updates', methods=['POST'])
+@admin_required
+def check_updates():
+    """Запускает фоновую проверку обновлений панели и всех приложений."""
+    update_checker.trigger_check_now()
+    flash('Проверка обновлений запущена — обновите страницу через ~минуту.', 'info')
+    return redirect(url_for('main.index'))
 
 
 @bp.route('/app/<name>')
@@ -616,6 +628,7 @@ def system_page():
         update_info=None,
         failed_report=self_update.get_failed_report(),
         pending=self_update.get_pending_update(),
+        auto_state=update_checker.get_state(),
     )
 
 
@@ -633,6 +646,7 @@ def system_check():
         update_info=update_info,
         failed_report=self_update.get_failed_report(),
         pending=self_update.get_pending_update(),
+        auto_state=update_checker.get_state(),
     )
 
 

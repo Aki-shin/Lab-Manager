@@ -153,6 +153,10 @@ ExecStart=${VENV_DIR}/bin/python3 ${PROJECT_DIR}/manager.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+SendSIGKILL=yes
 
 [Install]
 WantedBy=multi-user.target
