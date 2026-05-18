@@ -36,7 +36,7 @@ echo ""
 info "Проверяю системные зависимости..."
 
 PACKAGES_TO_INSTALL=()
-for pkg in python3 python3-venv python3-pip; do
+for pkg in python3 python3-venv python3-pip git; do
     if ! dpkg -s "$pkg" &>/dev/null; then
         PACKAGES_TO_INSTALL+=("$pkg")
     fi

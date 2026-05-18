@@ -573,6 +573,11 @@ def _git_env():
     env = dict(os.environ)
     env['GIT_TERMINAL_PROMPT'] = '0'          # не спрашивать креды по HTTPS
     env['GCM_INTERACTIVE'] = 'never'           # git-credential-manager тоже молчит
+    # Гарантируем PATH: при запуске под systemd окружение может быть урезано,
+    # а без PATH subprocess не найдёт исполняемый файл git.
+    env.setdefault('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')
+    if not env.get('PATH'):
+        env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
     # SSH: не зависать на «authenticity of host» и на парольной фразе ключа
     env.setdefault(
         'GIT_SSH_COMMAND',
