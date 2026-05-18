@@ -632,6 +632,148 @@ def git_pull_app(name):
         return False, f"Ошибка: {e}"
 
 
+# --- Обновление приложения с автооткатом ---
+
+def _git_app_head(app_path):
+    """Текущий commit приложения (полный hash) или None."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", app_path, "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=15, env=_git_env()
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _git_app_reset(app_path, commit):
+    """Жёсткий откат рабочего дерева приложения на указанный commit."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", app_path, "reset", "--hard", commit],
+            capture_output=True, text=True, timeout=30, env=_git_env()
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
+def _get_nrestarts(svc):
+    """Сколько раз systemd автоматически перезапускал сервис (Restart=)."""
+    out = run_systemctl(["show", svc, "--property=NRestarts", "--value"])
+    try:
+        return int(out)
+    except (ValueError, TypeError):
+        return None
+
+
+def _wait_app_healthy(name, settle=20):
+    """
+    Проверяет, что приложение пережило обновление.
+
+    «Здорово» = сервис стабильно `active` и не уходит в crash-loop.
+    HTTP-доступность учитывается как бонус, но не требуется — приложение
+    может вообще не быть веб-сервером. Crash-loop ловим по росту NRestarts:
+    при ошибке запуска systemd (Restart=always) начинает перезапускать юнит.
+
+    Возвращает (healthy: bool, reason: str|None).
+    """
+    svc = _service_name(name)
+    restarts_start = _get_nrestarts(svc)
+    deadline = time.time() + settle
+    last_state = "?"
+
+    while time.time() < deadline:
+        time.sleep(2)
+        last_state = run_systemctl(["is-active", svc])
+        if last_state == "failed":
+            return False, "сервис упал в состояние failed"
+        nrestarts = _get_nrestarts(svc)
+        if (restarts_start is not None and nrestarts is not None
+                and nrestarts > restarts_start):
+            return False, (f"приложение перезапускается циклически "
+                           f"(crash-loop: {nrestarts - restarts_start} авто-рестартов)")
+
+    if last_state != "active":
+        return False, f"сервис не активен (состояние: {last_state})"
+
+    # Бонус-диагностика: явная ошибка HTTP считается поломкой
+    port = get_assigned_port(name)
+    code = check_app_health(port) if port else None
+    if code is not None and code >= 500:
+        return False, f"приложение отвечает с ошибкой HTTP {code}"
+    return True, None
+
+
+def update_app_with_rollback(name):
+    """
+    Обновляет приложение из git с автооткатом при поломке.
+
+    Шаги: точка отката → git pull → пересборка venv → перезапуск →
+    проверка работоспособности. Если приложение не поднялось — откат кода,
+    повторная пересборка venv, перезапуск.
+
+    Возвращает (ok: bool, message: str, report: dict|None).
+    report заполняется только при сбое и содержит детали для UI.
+    """
+    app_path = os.path.join(Config.APPS_DIR, name)
+    if not os.path.isdir(os.path.join(app_path, ".git")):
+        return False, "Это не git-репозиторий", None
+
+    # 1. Точка отката
+    old_commit = _git_app_head(app_path)
+    if not old_commit:
+        return False, "Не удалось определить текущий commit приложения", None
+
+    # 2. git pull
+    pull_ok, pull_msg = git_pull_app(name)
+    if not pull_ok:
+        return False, f"Обновление не выполнено: {pull_msg}", None
+
+    new_commit = _git_app_head(app_path)
+    if new_commit == old_commit:
+        return True, "Обновлений нет — установлена последняя версия.", None
+
+    # 3. venv и зависимости
+    setup_ok, setup_msg = setup_app_environment(name)
+
+    # 4. Перезапуск сервиса (если он есть)
+    if not os.path.exists(_service_path(name)):
+        return True, (f"Код обновлён до {new_commit[:7]} ({setup_msg}). "
+                      f"Сервис не создан — проверка работоспособности пропущена."), None
+
+    control_service(name, "restart")
+
+    # 5. Проверка работоспособности
+    healthy, reason = _wait_app_healthy(name)
+    if healthy:
+        return True, (f"Приложение обновлено до {new_commit[:7]} "
+                      f"и работает штатно. {setup_msg}."), None
+
+    # 6. Автооткат
+    crash_logs = get_app_logs(name, lines=120)
+    rb_ok = _git_app_reset(app_path, old_commit)
+    setup_app_environment(name)
+    control_service(name, "restart")
+
+    report = {
+        "failed_commit": new_commit,
+        "rolled_back_to": old_commit if rb_ok else None,
+        "reason": reason,
+        "setup_msg": setup_msg,
+        "logs": crash_logs,
+    }
+    if rb_ok:
+        msg = (f"Обновление до {new_commit[:7]} сломало приложение "
+               f"({reason}). Выполнен автооткат к {old_commit[:7]}.")
+    else:
+        msg = (f"Обновление до {new_commit[:7]} сломало приложение "
+               f"({reason}), и автооткат не удался — требуется ручное вмешательство.")
+    return False, msg, report
+
+
 # --- Загрузка архивов ---
 
 SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9_.-]+$')

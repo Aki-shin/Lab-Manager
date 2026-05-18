@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Обновление {{ name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.app_detail', name=name) }}">{{ name }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Обновление</li>
+  </ol>
+</nav>
+
+<div class="card shadow-sm {% if ok %}border-success{% else %}border-danger{% endif %}">
+  <div class="card-header {% if ok %}bg-success{% else %}bg-danger{% endif %} text-light">
+    <h4 class="mb-0">
+      {% if ok %}✓{% else %}⚠{% endif %} Обновление приложения: {{ name }}
+    </h4>
+  </div>
+  <div class="card-body">
+
+    <div class="alert {% if ok %}alert-success{% else %}alert-danger{% endif %}">
+      {{ message }}
+    </div>
+
+    {% if report %}
+      <table class="table table-sm">
+        <tr>
+          <th style="width: 220px;">Сбойный коммит</th>
+          <td><code>{{ report.failed_commit[:7] if report.failed_commit else '—' }}</code></td>
+        </tr>
+        <tr>
+          <th>Откат выполнен к</th>
+          <td>
+            {% if report.rolled_back_to %}
+              <code>{{ report.rolled_back_to[:7] }}</code>
+            {% else %}
+              <span class="text-danger">не удалось — требуется ручное вмешательство по SSH</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Причина сбоя</th>
+          <td>{{ report.reason or '—' }}</td>
+        </tr>
+        <tr>
+          <th>Пересборка окружения</th>
+          <td>{{ report.setup_msg or '—' }}</td>
+        </tr>
+      </table>
+
+      <p class="mb-1"><strong>Журнал приложения на момент сбоя:</strong></p>
+      <pre class="terminal p-3">{{ report.logs or '(журнал недоступен)' }}</pre>
+    {% endif %}
+
+    <div class="d-flex gap-2 mt-4">
+      <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">
+        ← Вернуться к приложению
+      </a>
+      {% if not ok %}
+      <form action="{{ url_for('main.git_pull', name=name) }}" method="post"
+            onsubmit="return confirm('Повторить обновление?');">
+        <button type="submit" class="btn btn-outline-primary">↻ Повторить обновление</button>
+      </form>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

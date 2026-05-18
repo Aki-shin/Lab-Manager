@@ -133,8 +133,9 @@
                         </form>
 
                         {% if app.is_git %}
-                        <form action="{{ url_for('main.git_pull', name=app.name) }}" method="post">
-                            <button type="submit" class="btn btn-outline-success w-100">⬇ git pull + обновить venv</button>
+                        <form action="{{ url_for('main.git_pull', name=app.name) }}" method="post"
+                              onsubmit="return confirm('Обновить приложение из git? При поломке будет выполнен автооткат. Проверка займёт ~20 секунд.');">
+                            <button type="submit" class="btn btn-outline-success w-100">⬇ Обновить из git (с автооткатом)</button>
                         </form>
                         {% endif %}
                     </div>
@@ -213,8 +214,9 @@
                     <label class="form-check-label small" for="streamToggle">Live</label>
                 </div>
             </div>
-            <div class="card-body bg-dark p-0">
-                <div class="terminal" id="logsBox">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
+            <div class="card-body bg-dark p-0 d-flex flex-column">
+                <div class="terminal flex-grow-1 m-0" id="logsBox"
+                     style="max-height:none; min-height:420px; border-radius:0;">{% if logs %}{{ logs | e }}{% else %}Нет логов или сервис остановлен.{% endif %}</div>
             </div>
         </div>
     </div>

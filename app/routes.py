@@ -16,7 +16,7 @@ from .services import (
     run_diagnostic_test, parse_service_file,
     get_system_stats, stream_app_logs,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
-    setup_app_environment, get_assigned_port,
+    setup_app_environment, get_assigned_port, update_app_with_rollback,
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
@@ -357,14 +357,13 @@ def git_clone():
 @bp.route('/git/pull/<name>', methods=['POST'])
 @admin_required
 def git_pull(name):
-    """git pull для существующего приложения + обновление зависимостей."""
+    """git pull приложения с пересборкой venv и автооткатом при поломке."""
     safe_name = _safe_name(name)
-    ok, msg = git_pull_app(safe_name)
-    flash(msg, "success" if ok else "danger")
-    if ok:
-        setup_ok, setup_msg = setup_app_environment(safe_name)
-        flash(f"Окружение: {setup_msg}", "info" if setup_ok else "warning")
-    return redirect(url_for('main.app_detail', name=safe_name))
+    ok, msg, report = update_app_with_rollback(safe_name)
+    return render_template(
+        'app_update_result.html',
+        name=safe_name, ok=ok, message=msg, report=report
+    )
 
 
 @bp.route('/setup/<name>', methods=['POST'])
