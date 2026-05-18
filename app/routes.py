@@ -615,6 +615,8 @@ def system_page():
         version=self_update.get_version_info(),
         rollback=self_update.get_rollback_commit(),
         update_info=None,
+        failed_report=self_update.get_failed_report(),
+        pending=self_update.get_pending_update(),
     )
 
 
@@ -630,7 +632,18 @@ def system_check():
         version=self_update.get_version_info(),
         rollback=self_update.get_rollback_commit(),
         update_info=update_info,
+        failed_report=self_update.get_failed_report(),
+        pending=self_update.get_pending_update(),
     )
+
+
+@bp.route('/system/dismiss-report', methods=['POST'])
+@admin_required
+def system_dismiss_report():
+    """Скрывает отчёт о неудачном обновлении."""
+    self_update.dismiss_failed_report()
+    flash('Отчёт о неудачном обновлении скрыт', 'info')
+    return redirect(url_for('main.system_page'))
 
 
 @bp.route('/system/update', methods=['POST'])

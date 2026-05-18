@@ -12,6 +12,8 @@
 успел дойти до браузера прежде, чем systemd убьёт текущий процесс панели.
 """
 import os
+import json
+import datetime
 import subprocess
 
 from .config import BASE_DIR
@@ -21,8 +23,13 @@ SERVICE_NAME = "lab-manager.service"
 VENV_PYTHON = os.path.join(BASE_DIR, "venv", "bin", "python3")
 REQUIREMENTS = os.path.join(BASE_DIR, "requirements.txt")
 LAST_GOOD_FILE = os.path.join(BASE_DIR, "data", ".last_good_commit")
+PENDING_FILE = os.path.join(BASE_DIR, "data", ".update_pending")
+FAILED_FILE = os.path.join(BASE_DIR, "data", ".update_failed")
+WATCHDOG_SCRIPT = os.path.join(BASE_DIR, "update_watchdog.py")
 
-RESTART_DELAY = "3s"  # задержка перед перезапуском сервиса
+RESTART_DELAY = "3s"    # задержка перед перезапуском сервиса
+WATCHDOG_DELAY = "15s"  # задержка перед запуском сторожевой проверки
+PENDING_STALE_SEC = 600  # маркер обновления старше 10 мин считаем «зависшим»
 
 
 def is_git_repo():
@@ -162,6 +169,83 @@ def _pip_install():
         return False, f"ошибка pip: {e}"
 
 
+def _panel_port():
+    """Порт, на котором слушает панель (для healthcheck из watchdog)."""
+    try:
+        return int(os.environ.get("MANAGER_PORT", "80"))
+    except ValueError:
+        return 80
+
+
+def _write_pending(new_commit, rollback_commit):
+    """Маркер «обновление применено, ждёт проверки watchdog»."""
+    try:
+        os.makedirs(os.path.dirname(PENDING_FILE), exist_ok=True)
+        with open(PENDING_FILE, "w") as f:
+            json.dump({
+                "new_commit": new_commit,
+                "rollback_commit": rollback_commit,
+                "panel_port": _panel_port(),
+                "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            }, f)
+    except Exception:
+        pass
+
+
+def get_pending_update():
+    """Информация о применённом, но ещё не подтверждённом обновлении, либо None."""
+    try:
+        with open(PENDING_FILE) as f:
+            info = json.load(f)
+    except Exception:
+        return None
+    # «Зависший» маркер (watchdog не отработал) не показываем
+    try:
+        started = datetime.datetime.fromisoformat(info.get("started_at", ""))
+        if (datetime.datetime.now() - started).total_seconds() > PENDING_STALE_SEC:
+            return None
+    except Exception:
+        pass
+    return info
+
+
+def get_failed_report():
+    """Отчёт о неудачном обновлении (после автооткатa), либо None."""
+    try:
+        with open(FAILED_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _clear_failed_report():
+    try:
+        os.remove(FAILED_FILE)
+    except Exception:
+        pass
+
+
+def dismiss_failed_report():
+    """Скрывает отчёт о неудачном обновлении (по кнопке в UI)."""
+    _clear_failed_report()
+
+
+def _schedule_watchdog():
+    """
+    Отложенный запуск сторожевого скрипта отдельным транзиентным юнитом.
+    Он переживёт перезапуск/падение панели и выполнит автооткат при сбое.
+    """
+    try:
+        subprocess.run(
+            ["systemd-run", f"--on-active={WATCHDOG_DELAY}",
+             VENV_PYTHON, WATCHDOG_SCRIPT],
+            capture_output=True, text=True, timeout=10
+        )
+        return True
+    except Exception:
+        return False
+
+
 def schedule_restart():
     """
     Отложенный перезапуск сервиса через systemd-run.
@@ -186,6 +270,8 @@ def do_update():
     if not is_git_repo():
         return False, "Lab Manager установлен не из git-репозитория"
 
+    # Старый отчёт о неудаче больше не актуален
+    _clear_failed_report()
     rollback = _save_rollback_point()
 
     try:
@@ -209,9 +295,22 @@ def do_update():
                 pass
         return False, f"Обновление отменено ({pip_msg}). Выполнен откат кода."
 
+    # Фиксируем «обновление в процессе» — по этому маркеру watchdog
+    # поймёт, что нужно проверить здоровье панели после перезапуска.
+    new_commit = None
+    try:
+        res = _git(["rev-parse", "HEAD"])
+        if res.returncode == 0:
+            new_commit = res.stdout.strip()
+    except Exception:
+        pass
+    _write_pending(new_commit, rollback)
+
+    _schedule_watchdog()
     schedule_restart()
-    return True, (f"Код обновлён, {pip_msg}. "
-                  f"Панель перезапустится через ~3 секунды.")
+    return True, (f"Код обновлён, {pip_msg}. Панель перезапустится через ~3 секунды. "
+                  f"Через ~минуту watchdog проверит её работоспособность и при сбое "
+                  f"автоматически откатит обновление.")
 
 
 def do_rollback():
