@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Система — Lab Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+
+    <h3 class="mb-4">⚙ Система</h3>
+
+    {# --- Текущая версия --- #}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-dark text-light">Текущая версия Lab Manager</div>
+      <div class="card-body">
+        {% if not version.is_git %}
+          <div class="alert alert-warning mb-0">
+            Lab Manager установлен <strong>не из git-репозитория</strong> —
+            обновление через GitHub недоступно. Переустановите проект через
+            <code>git clone</code>, чтобы включить самообновление.
+          </div>
+        {% else %}
+          <table class="table table-sm mb-0">
+            <tr>
+              <th style="width: 160px;">Коммит</th>
+              <td><code>{{ version.commit or '—' }}</code></td>
+            </tr>
+            <tr>
+              <th>Ветка</th>
+              <td><code>{{ version.branch or '—' }}</code></td>
+            </tr>
+            <tr>
+              <th>Дата</th>
+              <td>{{ version.date or '—' }}</td>
+            </tr>
+            <tr>
+              <th>Описание</th>
+              <td>{{ version.subject or '—' }}</td>
+            </tr>
+          </table>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if version.is_git %}
+    {# --- Проверка и установка обновлений --- #}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-dark text-light">Обновление через GitHub</div>
+      <div class="card-body">
+
+        <form action="{{ url_for('main.system_check') }}" method="post" class="mb-3">
+          <button type="submit" class="btn btn-outline-primary">
+            🔄 Проверить обновления
+          </button>
+          <span class="text-muted small ms-2">
+            Выполняет <code>git fetch</code> и сравнивает с <code>origin</code>.
+          </span>
+        </form>
+
+        {% if update_info %}
+          {% if update_info.error %}
+            <div class="alert alert-danger">{{ update_info.error }}</div>
+          {% elif update_info.up_to_date %}
+            <div class="alert alert-success mb-0">
+              ✓ Установлена последняя версия — обновлений нет.
+            </div>
+          {% else %}
+            <div class="alert alert-info">
+              Доступно обновлений: <strong>{{ update_info.behind }}</strong>.
+            </div>
+            <table class="table table-sm">
+              <thead>
+                <tr><th>Коммит</th><th>Дата</th><th>Описание</th></tr>
+              </thead>
+              <tbody>
+                {% for c in update_info.commits %}
+                <tr>
+                  <td><code>{{ c.hash }}</code></td>
+                  <td class="text-muted small">{{ c.date }}</td>
+                  <td>{{ c.subject }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+
+            <form action="{{ url_for('main.system_update') }}" method="post"
+                  onsubmit="return confirm('Обновить Lab Manager и перезапустить панель? Убедитесь, что у вас есть SSH-доступ к серверу на случай сбоя.');">
+              <button type="submit" class="btn btn-success">
+                ⬇ Установить обновление и перезапустить
+              </button>
+            </form>
+            <div class="alert alert-warning small mt-3 mb-0">
+              <strong>Внимание:</strong> панель выполнит <code>git pull</code>,
+              переустановит зависимости и перезапустит себя через ~3 секунды.
+              После перезагрузки обновите страницу. Текущая версия сохраняется
+              как точка отката.
+            </div>
+          {% endif %}
+        {% endif %}
+
+      </div>
+    </div>
+
+    {# --- Откат --- #}
+    {% if rollback %}
+    <div class="card shadow-sm mb-4 border-warning">
+      <div class="card-header bg-warning text-dark">Откат к предыдущей версии</div>
+      <div class="card-body">
+        <p class="mb-3">
+          Сохранённая точка отката: <code>{{ rollback[:7] }}</code>.
+          Используйте, если после обновления панель работает некорректно.
+        </p>
+        <form action="{{ url_for('main.system_rollback') }}" method="post"
+              onsubmit="return confirm('Откатить Lab Manager к предыдущей версии и перезапустить панель?');">
+          <button type="submit" class="btn btn-outline-warning">
+            ↩ Откатить к {{ rollback[:7] }}
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

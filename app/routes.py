@@ -20,6 +20,7 @@ from .services import (
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
+from . import self_update
 
 
 def _safe_name(name):
@@ -601,4 +602,51 @@ def users_permissions(user_id):
         'user_permissions.html',
         target=target, all_apps=all_apps, current_perms=current_perms
     )
+
+
+# --- Самообновление Lab Manager (admin only) ---
+
+@bp.route('/system')
+@admin_required
+def system_page():
+    """Страница «Система»: текущая версия, проверка и установка обновлений."""
+    return render_template(
+        'system.html',
+        version=self_update.get_version_info(),
+        rollback=self_update.get_rollback_commit(),
+        update_info=None,
+    )
+
+
+@bp.route('/system/check', methods=['POST'])
+@admin_required
+def system_check():
+    """git fetch + сравнение с origin — показывает доступные обновления."""
+    update_info = self_update.check_for_updates()
+    if update_info.get('error'):
+        flash(f"Проверка обновлений: {update_info['error']}", 'danger')
+    return render_template(
+        'system.html',
+        version=self_update.get_version_info(),
+        rollback=self_update.get_rollback_commit(),
+        update_info=update_info,
+    )
+
+
+@bp.route('/system/update', methods=['POST'])
+@admin_required
+def system_update():
+    """git pull + pip install + отложенный перезапуск панели."""
+    ok, msg = self_update.do_update()
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('main.system_page'))
+
+
+@bp.route('/system/rollback', methods=['POST'])
+@admin_required
+def system_rollback():
+    """Откат к предыдущей версии + перезапуск панели."""
+    ok, msg = self_update.do_rollback()
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('main.system_page'))
 

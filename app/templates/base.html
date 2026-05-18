@@ -23,6 +23,7 @@
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('main.index') }}">Приложения</a></li>
                     {% if current_user and current_user.is_admin %}
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('main.users_list') }}">Пользователи</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('main.system_page') }}">Система</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('main.help_page') }}">Инструкция</a></li>
                     {% endif %}
                 </ul>
