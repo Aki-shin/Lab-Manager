@@ -564,6 +564,23 @@ def is_valid_git_url(url):
     return bool(GIT_URL_RE.match(url.strip()))
 
 
+def _git_env():
+    """
+    Окружение для git-операций: запрещаем любые интерактивные запросы.
+    Без этого git зависает на запросе логина/пароля (приватный репозиторий)
+    или подтверждения host key (SSH), т.к. в subprocess ввода нет.
+    """
+    env = dict(os.environ)
+    env['GIT_TERMINAL_PROMPT'] = '0'          # не спрашивать креды по HTTPS
+    env['GCM_INTERACTIVE'] = 'never'           # git-credential-manager тоже молчит
+    # SSH: не зависать на «authenticity of host» и на парольной фразе ключа
+    env.setdefault(
+        'GIT_SSH_COMMAND',
+        'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+    )
+    return env
+
+
 def git_clone_app(git_url, name):
     """Клонирует репозиторий в APPS_DIR/name. Возвращает (ok, message)."""
     if not is_valid_git_url(git_url):
@@ -576,9 +593,11 @@ def git_clone_app(git_url, name):
     try:
         result = subprocess.run(
             ["git", "clone", "--depth", "1", git_url, target],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120, env=_git_env()
         )
         if result.returncode != 0:
+            # Чистим за собой пустую/частичную директорию
+            shutil.rmtree(target, ignore_errors=True)
             return False, f"git clone failed: {result.stderr.strip()}"
         return True, f"Репозиторий клонирован в {target}"
     except subprocess.TimeoutExpired:
@@ -596,11 +615,14 @@ def git_pull_app(name):
     try:
         result = subprocess.run(
             ["git", "-C", target, "pull", "--ff-only"],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, text=True, timeout=120, env=_git_env()
         )
         if result.returncode != 0:
-            return False, f"git pull failed: {result.stderr.strip()}"
+            err = (result.stderr.strip() or result.stdout.strip())
+            return False, f"git pull failed: {err}"
         return True, result.stdout.strip() or "Обновлено"
+    except subprocess.TimeoutExpired:
+        return False, "Таймаут обновления (>120с)"
     except Exception as e:
         return False, f"Ошибка: {e}"
 
