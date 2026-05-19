@@ -1,162 +1,158 @@
-{% extends "base.html" %}
-{% block title %}Консоль {{ name }} — Host Manager{% endblock %}
-
-{% block content %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
-<style>
-    html, body { overflow: hidden; }
-    #termArea {
-        position: fixed;
-        left: 0; right: 0;
-        background: #1e1e1e;
-        padding: 6px;
-        box-sizing: border-box;
-        overflow: hidden;
-    }
-    #term { width: 100%; height: 100%; }
-</style>
-
-<div id="termBar" class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-    <nav aria-label="breadcrumb" class="mb-0">
-        <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item"><a href="{{ url_for('main.tmux_page') }}">Консоль</a></li>
-            <li class="breadcrumb-item active" aria-current="page">{{ name }}</li>
-        </ol>
-    </nav>
-    <div class="d-flex align-items-center gap-2">
-        <span class="text-muted small d-none d-md-inline">
-            <i class="bi bi-info-circle"></i> Закрытие вкладки лишь отсоединяет от сессии
-        </span>
-        <span id="termSize" class="badge bg-dark border text-light font-monospace" title="Размер терминала (столбцы×строки)">—</span>
-        <span id="connStatus" class="badge bg-secondary">подключение…</span>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Консоль {{ name }} — Host Manager</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #1e1e1e;
+        }
+        /* Колонка на всю высоту окна: бар сверху, терминал — на всё остальное */
+        body { display: flex; flex-direction: column; }
+        #bar {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            height: 38px;
+            padding: 0 14px;
+            background: #212529;
+            color: #e9ecef;
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 13px;
+        }
+        #bar a { color: #9ec5fe; text-decoration: none; }
+        #bar a:hover { text-decoration: underline; }
+        #bar .sep { color: #6c757d; }
+        #bar .spacer { flex: 1 1 auto; }
+        #bar .pill {
+            font-family: monospace;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        #termSize { background: #343a40; }
+        #connStatus { background: #6c757d; color: #fff; }
+        #connStatus.ok { background: #198754; }
+        #connStatus.err { background: #dc3545; }
+        /* Терминал занимает всё оставшееся место */
+        #term { flex: 1 1 auto; min-height: 0; padding: 6px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+    <div id="bar">
+        <a href="{{ url_for('main.tmux_page') }}">← Консоль</a>
+        <span class="sep">/</span>
+        <span>{{ name }}</span>
+        <span class="spacer"></span>
+        <span class="d-none-small">Закрытие вкладки лишь отсоединяет от сессии</span>
+        <span id="termSize" class="pill">—</span>
+        <span id="connStatus" class="pill">подключение…</span>
     </div>
-</div>
+    <div id="term"></div>
 
-{% if not terminal_available %}
-<div class="alert alert-warning">
-    <i class="bi bi-exclamation-triangle me-1"></i>Живой терминал недоступен:
-    не установлен <code>flask-sock</code>. Переустановите зависимости (install.sh).
-</div>
-{% endif %}
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script>
+    (function () {
+        const FONT = 'Menlo, Consolas, "DejaVu Sans Mono", monospace';
+        const FONT_SIZE = 14;
+        const statusEl = document.getElementById('connStatus');
+        const sizeEl = document.getElementById('termSize');
+        const termEl = document.getElementById('term');
 
-<div id="termArea"><div id="term"></div></div>
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: FONT_SIZE,
+            fontFamily: FONT,
+            theme: { background: '#1e1e1e' }
+        });
+        const fit = new FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open(termEl);
 
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
-<script>
-(function () {
-    const FONT = 'Menlo, Consolas, "DejaVu Sans Mono", monospace';
-    const FONT_SIZE = 14;
-    const statusEl = document.getElementById('connStatus');
-    const area = document.getElementById('termArea');
-    const bar = document.getElementById('termBar');
-    const termEl = document.getElementById('term');
+        function cellSize() {
+            const p = document.createElement('span');
+            p.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;'
+                + 'font-family:' + FONT + ';font-size:' + FONT_SIZE + 'px;line-height:normal;';
+            p.textContent = 'WWWWWWWWWWWWWWWWWWWW';
+            document.body.appendChild(p);
+            const r = p.getBoundingClientRect();
+            document.body.removeChild(p);
+            return { w: r.width / 20, h: r.height };
+        }
 
-    // Высота области = от низа панели-бара до низа окна
-    function layout() {
-        const top = Math.round(bar.getBoundingClientRect().bottom);
-        area.style.top = top + 'px';
-        area.style.height = (window.innerHeight - top) + 'px';
-    }
-    layout();
+        function resizeTerm() {
+            let dims = null;
+            try { dims = fit.proposeDimensions(); } catch (e) {}
+            if (!dims || !dims.cols || !dims.rows) {
+                const c = cellSize();
+                const rect = termEl.getBoundingClientRect();
+                if (c.w >= 2 && c.h >= 2 && rect.width > 10 && rect.height > 10) {
+                    dims = {
+                        cols: Math.max(20, Math.floor((rect.width - 12) / c.w)),
+                        rows: Math.max(8, Math.floor((rect.height - 12) / c.h))
+                    };
+                }
+            }
+            if (dims && dims.cols && dims.rows
+                    && (dims.cols !== term.cols || dims.rows !== term.rows)) {
+                term.resize(dims.cols, dims.rows);
+            }
+            sizeEl.textContent = term.cols + '×' + term.rows;
+        }
 
-    const term = new Terminal({
-        cursorBlink: true,
-        fontSize: FONT_SIZE,
-        fontFamily: FONT,
-        theme: { background: '#1e1e1e' }
-    });
-    const fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
-    term.open(termEl);
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/tmux/{{ name }}/ws`);
+        ws.binaryType = 'arraybuffer';
 
-    // Размер символа моноширинного шрифта — измеряем напрямую (надёжно,
-    // не зависит от готовности внутреннего рендерера xterm).
-    function cellSize() {
-        const p = document.createElement('span');
-        p.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;'
-            + 'font-family:' + FONT + ';font-size:' + FONT_SIZE + 'px;line-height:normal;';
-        p.textContent = 'WWWWWWWWWWWWWWWWWWWW';
-        document.body.appendChild(p);
-        const r = p.getBoundingClientRect();
-        document.body.removeChild(p);
-        return { w: r.width / 20, h: r.height };
-    }
-
-    // Подгоняем терминал под область. Сначала пробуем FitAddon (точнее),
-    // если он ещё не готов — считаем размер вручную.
-    function resizeTerm() {
-        layout();
-        let dims = null;
-        try { dims = fit.proposeDimensions(); } catch (e) {}
-        if (!dims || !dims.cols || !dims.rows) {
-            const c = cellSize();
-            const rect = termEl.getBoundingClientRect();
-            if (c.w >= 2 && c.h >= 2 && rect.width > 10 && rect.height > 10) {
-                dims = {
-                    cols: Math.max(20, Math.floor(rect.width / c.w)),
-                    rows: Math.max(8, Math.floor(rect.height / c.h))
-                };
+        function sendResize() {
+            if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }));
             }
         }
-        if (dims && dims.cols && dims.rows
-                && (dims.cols !== term.cols || dims.rows !== term.rows)) {
-            term.resize(dims.cols, dims.rows);
-        }
-        updateSizeLabel();
-    }
 
-    function updateSizeLabel() {
-        const el = document.getElementById('termSize');
-        if (el) el.textContent = term.cols + '×' + term.rows;
-    }
-
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/tmux/{{ name }}/ws`);
-    ws.binaryType = 'arraybuffer';
-
-    function setStatus(cls, text) {
-        statusEl.className = 'badge ' + cls;
-        statusEl.textContent = text;
-    }
-    function sendResize() {
-        if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows }));
-        }
-    }
-
-    // Несколько прогонов подгонки — после вёрстки и загрузки шрифтов
-    resizeTerm();
-    [50, 150, 400, 900].forEach(function (ms) {
-        setTimeout(resizeTerm, ms);
-    });
-    window.addEventListener('resize', resizeTerm);
-    if (window.ResizeObserver) {
-        new ResizeObserver(resizeTerm).observe(area);
-    }
-
-    ws.onopen = () => {
-        setStatus('bg-success', 'подключено');
         resizeTerm();
-        sendResize();           // сообщаем серверу размер сразу при открытии
-        term.focus();
-    };
-    ws.onmessage = (e) => {
-        if (e.data instanceof ArrayBuffer) term.write(new Uint8Array(e.data));
-        else term.write(e.data);
-    };
-    ws.onclose = () => {
-        setStatus('bg-danger', 'отключено');
-        term.write('\r\n\x1b[31m[соединение закрыто]\x1b[0m\r\n');
-    };
-    ws.onerror = () => setStatus('bg-danger', 'ошибка соединения');
+        [50, 150, 400, 900].forEach(function (ms) { setTimeout(resizeTerm, ms); });
+        window.addEventListener('resize', resizeTerm);
+        if (window.ResizeObserver) {
+            new ResizeObserver(resizeTerm).observe(termEl);
+        }
 
-    term.onData((d) => {
-        if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', d: d }));
-    });
-    // term.resize() → onResize → сообщаем новый размер серверу
-    term.onResize(() => { sendResize(); updateSizeLabel(); });
-    updateSizeLabel();
-})();
-</script>
-{% endblock %}
+        ws.onopen = () => {
+            statusEl.textContent = 'подключено';
+            statusEl.className = 'pill ok';
+            resizeTerm();
+            sendResize();
+            term.focus();
+        };
+        ws.onmessage = (e) => {
+            if (e.data instanceof ArrayBuffer) term.write(new Uint8Array(e.data));
+            else term.write(e.data);
+        };
+        ws.onclose = () => {
+            statusEl.textContent = 'отключено';
+            statusEl.className = 'pill err';
+            term.write('\r\n\x1b[31m[соединение закрыто]\x1b[0m\r\n');
+        };
+        ws.onerror = () => {
+            statusEl.textContent = 'ошибка';
+            statusEl.className = 'pill err';
+        };
+
+        term.onData((d) => {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', d: d }));
+        });
+        term.onResize(() => {
+            sendResize();
+            sizeEl.textContent = term.cols + '×' + term.rows;
+        });
+    })();
+    </script>
+</body>
+</html>
