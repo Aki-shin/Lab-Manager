@@ -110,6 +110,8 @@ def index():
                     status = get_app_status(item, with_metrics=True)
                     status['external_port'] = db.get_external_port(item)
                     status['update'] = update_checker.get_app_update(item)
+                    if status.get('is_git'):
+                        status['version'] = get_app_git_info(item)
                     apps.append(status)
         system = get_system_stats()
         return render_template("dashboard.html", apps=apps, system=system,

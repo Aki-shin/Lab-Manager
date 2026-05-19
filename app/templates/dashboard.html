@@ -150,8 +150,9 @@
 
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-3 small">
                     {% if app.is_git %}
+                        {% set v = app.version %}
                         {% set u = app.update %}
-                        <span class="font-monospace text-muted" title="Текущий коммит">{{ u.commit if u and u.commit else '—' }}</span>
+                        <span class="font-monospace text-muted" title="Текущий коммит">{{ v.commit if v and v.commit else '—' }}</span>
                         {% if u and u.update_available %}
                             <a href="{{ url_for('main.app_update_page', name=app.name) }}"
                                class="badge bg-warning text-dark text-decoration-none">

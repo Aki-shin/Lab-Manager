@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <mask id="srv">
+      <rect width="64" height="64" fill="#000"/>
+      <rect x="14" y="15" width="36" height="15" rx="4" fill="#fff"/>
+      <rect x="14" y="34" width="36" height="15" rx="4" fill="#fff"/>
+      <circle cx="21.5" cy="22.5" r="3" fill="#000"/>
+      <circle cx="21.5" cy="41.5" r="3" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="64" height="64" fill="#ffffff" mask="url(#srv)"/>
+</svg>

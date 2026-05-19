@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ app.name }} - Управление{% endblock %}
+{% block title %}{{ app.name }} — управление{% endblock %}
 
 {% block content %}
 {% set external_port = app.external_port %}
@@ -10,25 +10,40 @@
   </ol>
 </nav>
 
-<div class="row">
-    <div class="col-md-5">
+<div class="row g-4">
+    <div class="col-lg-5">
         <div class="card shadow-sm mb-4">
             <div class="card-body">
-                <h3 class="card-title">
-                    {{ app.name }}
-                    {% if app.is_git %}<span class="badge bg-light text-dark border ms-2" style="font-size: 0.5em;">git</span>{% endif %}
-                </h3>
-                <p class="text-muted small font-monospace">{{ app.path }}</p>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="me-2" style="min-width:0;">
+                        <h4 class="mb-1 text-truncate">
+                            {{ app.name }}
+                            {% if app.is_git %}<span class="badge bg-light text-dark border align-middle" style="font-size:.5em;">git</span>{% endif %}
+                        </h4>
+                        <p class="text-muted small font-monospace mb-0 text-truncate">{{ app.path }}</p>
+                    </div>
+                    {% if app.has_service %}
+                        {% if app.active_state == 'active' %}
+                            <span class="badge bg-success">Running</span>
+                        {% elif app.active_state == 'failed' %}
+                            <span class="badge bg-danger">Failed</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ app.active_state }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-warning text-dark">Нет сервиса</span>
+                    {% endif %}
+                </div>
                 <hr>
 
                 {% if not app.has_service %}
-                    <div class="alert alert-secondary">
-                        <small>Systemd сервис отсутствует. Создайте его для запуска.</small>
+                    <div class="alert alert-secondary small">
+                        <i class="bi bi-info-circle me-1"></i>Systemd-сервис отсутствует. Создайте его для запуска.
                     </div>
 
                     <form action="{{ url_for('main.setup_env', name=app.name) }}" method="post" class="mb-3">
                         <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
-                            ⚙️ Настроить окружение (venv + pip install)
+                            <i class="bi bi-gear"></i> Настроить окружение (venv + pip install)
                         </button>
                     </form>
 
@@ -45,35 +60,29 @@
                         <div class="mb-3">
                             <label class="form-label text-muted small">Переменные окружения</label>
                             <div id="envList"></div>
-                            <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="addEnvRow()">+ Добавить переменную</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="addEnvRow()">
+                                <i class="bi bi-plus-lg"></i> Добавить переменную
+                            </button>
                         </div>
-                        <button class="btn btn-primary w-100">⚙️ Создать сервис</button>
+                        <button class="btn btn-primary w-100"><i class="bi bi-gear"></i> Создать сервис</button>
                     </form>
 
                     <hr>
                     <a href="{{ url_for('main.app_update_page', name=app.name) }}"
-                       class="btn btn-outline-success w-100">🔄 Обновления приложения</a>
+                       class="btn btn-outline-success w-100"><i class="bi bi-arrow-repeat"></i> Обновления приложения</a>
 
                 {% else %}
-                    <div class="mb-3 d-flex align-items-center justify-content-between">
-                        <span>Статус:</span>
-                        <span>
-                        {% if app.active_state == 'active' %}
-                            <span class="badge bg-success fs-6">Running</span>
+                    {% if app.active_state == 'active' %}
+                    <div class="mb-3">
+                        {% if app.health and app.health < 500 %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> HTTP {{ app.health }}</span>
+                        {% elif app.health %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill"></i> HTTP {{ app.health }}</span>
                         {% else %}
-                            <span class="badge bg-secondary fs-6">{{ app.active_state }}</span>
+                            <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> Нет ответа</span>
                         {% endif %}
-                        {% if app.active_state == 'active' %}
-                            {% if app.health and app.health < 500 %}
-                                <span class="badge bg-success" title="HTTP {{ app.health }}">✓ HTTP {{ app.health }}</span>
-                            {% elif app.health %}
-                                <span class="badge bg-warning text-dark">⚠ HTTP {{ app.health }}</span>
-                            {% else %}
-                                <span class="badge bg-danger" title="Нет ответа">✗ no reply</span>
-                            {% endif %}
-                        {% endif %}
-                        </span>
                     </div>
+                    {% endif %}
 
                     {% if app.resources %}
                     <div class="card bg-light border-0 mb-3">
@@ -100,15 +109,15 @@
                     {% endif %}
 
                     {% if app.active_state == 'active' and external_port %}
-                    <div class="d-grid gap-2 mb-3">
+                    <div class="d-grid mb-3">
                         <a href="//{{ request.host.split(':')[0] }}:{{ external_port }}/" target="_blank"
                            class="btn btn-success fw-bold py-2">
-                            🚀 Открыть приложение (порт {{ external_port }})
+                            <i class="bi bi-box-arrow-up-right"></i> Открыть приложение (порт {{ external_port }})
                         </a>
                     </div>
                     {% elif app.active_state == 'active' and not external_port %}
                     <div class="alert alert-warning py-2 small">
-                        Приложение запущено, но внешний порт не настроен. Назначьте порт ниже.
+                        <i class="bi bi-info-circle me-1"></i>Приложение запущено, но внешний порт не настроен.
                     </div>
                     {% endif %}
 
@@ -116,36 +125,35 @@
                         {% if app.active_state == 'active' %}
                             <div class="btn-group">
                                 <form action="{{ url_for('main.service_action', name=app.name, action='restart') }}" method="post" class="d-inline flex-grow-1">
-                                    <button type="submit" class="btn btn-warning w-100">🔄 Перезагрузить</button>
+                                    <button type="submit" class="btn btn-warning w-100"><i class="bi bi-arrow-clockwise"></i> Перезагрузить</button>
                                 </form>
                                 <form action="{{ url_for('main.service_action', name=app.name, action='stop') }}" method="post" class="d-inline flex-grow-1">
-                                    <button type="submit" class="btn btn-danger w-100">⏹ Стоп</button>
+                                    <button type="submit" class="btn btn-danger w-100"><i class="bi bi-stop-fill"></i> Стоп</button>
                                 </form>
                             </div>
                         {% else %}
                             <form action="{{ url_for('main.service_action', name=app.name, action='start') }}" method="post">
-                                <button type="submit" class="btn btn-success w-100">▶ Запустить</button>
+                                <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-fill"></i> Запустить</button>
                             </form>
-                            <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white">🐞 Диагностика</a>
+                            <a href="{{ url_for('main.diagnose_app', name=app.name) }}" class="btn btn-info text-white"><i class="bi bi-bug"></i> Диагностика</a>
                         {% endif %}
 
-                        <a href="{{ url_for('main.edit_service', name=app.name) }}" class="btn btn-outline-primary">✏️ Редактировать сервис</a>
+                        <a href="{{ url_for('main.edit_service', name=app.name) }}" class="btn btn-outline-primary"><i class="bi bi-pencil"></i> Редактировать сервис</a>
 
                         <form action="{{ url_for('main.setup_env', name=app.name) }}" method="post"
                               onsubmit="return confirm('Пересобрать venv и переустановить зависимости?');">
-                            <button type="submit" class="btn btn-outline-secondary w-100">⚙️ Настроить окружение (venv)</button>
+                            <button type="submit" class="btn btn-outline-secondary w-100"><i class="bi bi-gear"></i> Настроить окружение (venv)</button>
                         </form>
 
                         <a href="{{ url_for('main.app_update_page', name=app.name) }}"
-                           class="btn btn-outline-success w-100">🔄 Обновления приложения</a>
+                           class="btn btn-outline-success w-100"><i class="bi bi-arrow-repeat"></i> Обновления приложения</a>
                     </div>
 
                     <hr>
 
-                    <!-- Прозрачный внешний порт -->
                     <div class="card border-info mb-2">
-                        <div class="card-header bg-info text-white py-2">
-                            🌐 Внешний порт (прозрачный режим)
+                        <div class="card-header bg-info-subtle text-info-emphasis py-2 fw-semibold">
+                            <i class="bi bi-globe"></i> Внешний порт (прозрачный режим)
                         </div>
                         <div class="card-body py-2">
                             <p class="small text-muted mb-2">
@@ -171,7 +179,7 @@
                                     {% if external_port %}
                                     <button type="submit" name="external_port" value="off"
                                             class="btn btn-outline-danger"
-                                            onclick="return confirm('Выключить внешний порт?');">✕</button>
+                                            onclick="return confirm('Выключить внешний порт?');"><i class="bi bi-x-lg"></i></button>
                                     {% endif %}
                                 </div>
                                 <div class="form-text small">
@@ -187,14 +195,15 @@
                         <div class="accordion-item border-danger">
                             <h2 class="accordion-header">
                                 <button class="accordion-button collapsed text-danger" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDel">
-                                    🗑 Опасная зона
+                                    <i class="bi bi-exclamation-octagon me-2"></i> Опасная зона
                                 </button>
                             </h2>
                             <div id="collapseDel" class="accordion-collapse collapse" data-bs-parent="#accDelete">
                                 <div class="accordion-body">
                                     <p class="small">Удалит .service файл. Код в <code>{{ app.path }}</code> останется.</p>
                                     <form action="{{ url_for('main.delete_service', name=app.name) }}" method="post" onsubmit="return confirm('Удалить сервис?')">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger w-100">Удалить конфигурацию</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger w-100">
+                                            <i class="bi bi-trash"></i> Удалить конфигурацию</button>
                                     </form>
                                 </div>
                             </div>
@@ -205,11 +214,12 @@
         </div>
     </div>
 
-    <div class="col-md-7">
+    <div class="col-lg-7">
         <div class="card shadow-sm">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span>📋 Логи <span id="streamStatus" class="badge bg-secondary ms-2" style="font-size: 0.65em;">offline</span></span>
-                <div class="form-check form-switch text-white">
+                <span><i class="bi bi-card-text me-1"></i>Логи
+                    <span id="streamStatus" class="badge bg-secondary ms-2" style="font-size: 0.65em;">offline</span></span>
+                <div class="form-check form-switch text-white mb-0">
                     <input class="form-check-input" type="checkbox" id="streamToggle" {% if app.has_service %}checked{% endif %}>
                     <label class="form-check-label small" for="streamToggle">Live</label>
                 </div>
@@ -234,7 +244,7 @@ function addEnvRow() {
     row.innerHTML = `
         <input type="text" class="form-control" name="env_key_${envIdx}" placeholder="KEY" pattern="[A-Z_][A-Z0-9_]*">
         <input type="text" class="form-control" name="env_val_${envIdx}" placeholder="value">
-        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">×</button>
+        <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()"><i class="bi bi-x-lg"></i></button>
     `;
     list.appendChild(row);
     envIdx++;
