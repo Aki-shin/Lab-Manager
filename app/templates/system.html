@@ -85,6 +85,23 @@
       </div>
     </div>
 
+    {# --- Управление сервисом --- #}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-dark text-light">Сервис панели</div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">
+          Перезапуск процесса Host Manager (<code>systemctl restart</code>).
+          Панель ненадолго станет недоступна — обновите страницу через несколько секунд.
+        </p>
+        <form action="{{ url_for('main.system_restart') }}" method="post"
+              onsubmit="return confirm('Перезапустить сервис Host Manager? Панель ненадолго станет недоступна.');">
+          <button type="submit" class="btn btn-outline-warning">
+            <i class="bi bi-arrow-clockwise"></i> Перезагрузить сервис
+          </button>
+        </form>
+      </div>
+    </div>
+
     {% if version.is_git %}
     {# --- Проверка и установка обновлений --- #}
     <div class="card shadow-sm mb-4">

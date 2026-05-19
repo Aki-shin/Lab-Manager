@@ -803,6 +803,17 @@ def system_dismiss_report():
     return redirect(url_for('main.system_page'))
 
 
+@bp.route('/system/restart', methods=['POST'])
+@admin_required
+def system_restart():
+    """Перезапуск сервиса панели."""
+    if self_update.schedule_restart():
+        flash('Перезапуск панели запущен — обновите страницу через ~5 секунд.', 'info')
+    else:
+        flash('Не удалось запланировать перезапуск сервиса', 'danger')
+    return redirect(url_for('main.system_page'))
+
+
 @bp.route('/system/update', methods=['POST'])
 @admin_required
 def system_update():
