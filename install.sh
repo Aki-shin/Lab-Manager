@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================
-#  Lab Manager — установка (Debian 12, root)
+#  Host Manager — установка (Debian 12, root)
 # ============================================
 set -euo pipefail
 
@@ -20,7 +20,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="lab-manager"
+SERVICE_NAME="host-manager"
+OLD_SERVICE_NAME="lab-manager"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 ENV_FILE="${PROJECT_DIR}/.env"
 VENV_DIR="${PROJECT_DIR}/venv"
@@ -28,7 +29,7 @@ APPS_DIR="/root/apps"
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║     Lab Manager — Установка          ║${NC}"
+echo -e "${GREEN}║     Host Manager — Установка         ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo ""
 
@@ -36,7 +37,7 @@ echo ""
 info "Проверяю системные зависимости..."
 
 PACKAGES_TO_INSTALL=()
-for pkg in python3 python3-venv python3-pip git; do
+for pkg in python3 python3-venv python3-pip git tmux; do
     if ! dpkg -s "$pkg" &>/dev/null; then
         PACKAGES_TO_INSTALL+=("$pkg")
     fi
@@ -138,12 +139,28 @@ mkdir -p "${PROJECT_DIR}/data"
 chmod 700 "${PROJECT_DIR}/data"
 ok "Директория для БД (${PROJECT_DIR}/data) готова."
 
+# Миграция БД со старого имени (lab-manager.db → host-manager.db)
+if [ -f "${PROJECT_DIR}/data/lab-manager.db" ] && [ ! -f "${PROJECT_DIR}/data/host-manager.db" ]; then
+    mv "${PROJECT_DIR}/data/lab-manager.db" "${PROJECT_DIR}/data/host-manager.db"
+    ok "База данных перенесена: lab-manager.db → host-manager.db"
+fi
+
 # --- 5. Systemd service ---
+# Миграция со старого сервиса lab-manager
+if [ -f "/etc/systemd/system/${OLD_SERVICE_NAME}.service" ]; then
+    info "Обнаружен старый сервис ${OLD_SERVICE_NAME} — выполняю миграцию..."
+    systemctl stop "${OLD_SERVICE_NAME}.service" 2>/dev/null || true
+    systemctl disable "${OLD_SERVICE_NAME}.service" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${OLD_SERVICE_NAME}.service"
+    systemctl daemon-reload
+    ok "Старый сервис ${OLD_SERVICE_NAME} удалён."
+fi
+
 info "Создаю systemd service..."
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=Lab Manager
+Description=Host Manager
 After=network.target
 
 [Service]

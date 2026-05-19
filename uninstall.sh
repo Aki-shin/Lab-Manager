@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================
-#  Lab Manager — удаление (Debian 12, root)
+#  Host Manager — удаление (Debian 12, root)
 # ============================================
 set -euo pipefail
 
@@ -65,7 +65,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="lab-manager"
+SERVICE_NAME="host-manager"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 ENV_FILE="${PROJECT_DIR}/.env"
 VENV_DIR="${PROJECT_DIR}/venv"
@@ -74,20 +74,27 @@ SERVICE_PREFIX="labapp-"
 
 echo ""
 echo -e "${RED}╔══════════════════════════════════════╗${NC}"
-echo -e "${RED}║     Lab Manager — Удаление           ║${NC}"
+echo -e "${RED}║     Host Manager — Удаление          ║${NC}"
 echo -e "${RED}╚══════════════════════════════════════╝${NC}"
 echo ""
 
-# --- 1. Остановка Lab Manager ---
-if [ -f "$SERVICE_FILE" ]; then
-    info "Останавливаю сервис ${SERVICE_NAME}..."
-    hard_stop_unit "${SERVICE_NAME}.service"
-    systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
-    rm -f "$SERVICE_FILE"
-    systemctl daemon-reload
-    ok "Сервис ${SERVICE_NAME} остановлен и удалён."
-else
-    warn "Сервис ${SERVICE_NAME} не найден — пропускаю."
+# --- 1. Остановка Host Manager ---
+# Чистим и текущее имя сервиса, и старое (lab-manager) при наличии
+PANEL_FOUND=0
+for svc in "$SERVICE_NAME" "lab-manager"; do
+    svc_file="/etc/systemd/system/${svc}.service"
+    if [ -f "$svc_file" ]; then
+        PANEL_FOUND=1
+        info "Останавливаю сервис ${svc}..."
+        hard_stop_unit "${svc}.service"
+        systemctl disable "${svc}.service" 2>/dev/null || true
+        rm -f "$svc_file"
+        systemctl daemon-reload
+        ok "Сервис ${svc} остановлен и удалён."
+    fi
+done
+if [ "$PANEL_FOUND" -eq 0 ]; then
+    warn "Сервис панели не найден — пропускаю."
 fi
 
 # --- 2. Управляемые приложения ---

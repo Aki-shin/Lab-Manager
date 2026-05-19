@@ -12,7 +12,16 @@ class Config:
     APPS_DIR = os.getenv('APPS_DIR', '/root/apps')
     SYSTEMD_DIR = '/etc/systemd/system'
     SERVICE_PREFIX = 'labapp-'
-    DB_PATH = os.getenv('DB_PATH', os.path.join(BASE_DIR, 'data', 'lab-manager.db'))
+    # host-manager.db по умолчанию; если от старой версии остался
+    # lab-manager.db, а нового файла ещё нет — используем старый,
+    # чтобы не потерять пользователей и настройки.
+    _DEFAULT_DB = os.path.join(BASE_DIR, 'data', 'host-manager.db')
+    _LEGACY_DB = os.path.join(BASE_DIR, 'data', 'lab-manager.db')
+    DB_PATH = os.getenv('DB_PATH') or (
+        _LEGACY_DB if (os.path.exists(_LEGACY_DB)
+                       and not os.path.exists(_DEFAULT_DB))
+        else _DEFAULT_DB
+    )
 
     @staticmethod
     def init_dirs():

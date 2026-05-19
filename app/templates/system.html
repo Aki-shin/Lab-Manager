@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Система — Lab Manager{% endblock %}
+{% block title %}Система — Host Manager{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -54,11 +54,11 @@
 
     {# --- Текущая версия --- #}
     <div class="card shadow-sm mb-4">
-      <div class="card-header bg-dark text-light">Текущая версия Lab Manager</div>
+      <div class="card-header bg-dark text-light">Текущая версия Host Manager</div>
       <div class="card-body">
         {% if not version.is_git %}
           <div class="alert alert-warning mb-0">
-            Lab Manager установлен <strong>не из git-репозитория</strong> —
+            Host Manager установлен <strong>не из git-репозитория</strong> —
             обновление через GitHub недоступно. Переустановите проект через
             <code>git clone</code>, чтобы включить самообновление.
           </div>
@@ -142,7 +142,7 @@
             </table>
 
             <form action="{{ url_for('main.system_update') }}" method="post"
-                  onsubmit="return confirm('Обновить Lab Manager и перезапустить панель? Убедитесь, что у вас есть SSH-доступ к серверу на случай сбоя.');">
+                  onsubmit="return confirm('Обновить Host Manager и перезапустить панель? Убедитесь, что у вас есть SSH-доступ к серверу на случай сбоя.');">
               <button type="submit" class="btn btn-success">
                 ⬇ Установить обновление и перезапустить
               </button>
@@ -171,7 +171,7 @@
           Используйте, если после обновления панель работает некорректно.
         </p>
         <form action="{{ url_for('main.system_rollback') }}" method="post"
-              onsubmit="return confirm('Откатить Lab Manager к предыдущей версии и перезапустить панель?');">
+              onsubmit="return confirm('Откатить Host Manager к предыдущей версии и перезапустить панель?');">
           <button type="submit" class="btn btn-outline-warning">
             ↩ Откатить к {{ rollback[:7] }}
           </button>

@@ -229,7 +229,7 @@ def create_app_service(name, app_path, port, entry_cmd, extra_env=None, start=Tr
     env_block = "\n".join(env_lines)
 
     service_content = f"""[Unit]
-Description={name} via Lab Manager (Port {port})
+Description={name} via Host Manager (Port {port})
 After=network.target
 
 [Service]

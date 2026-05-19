@@ -77,10 +77,10 @@
 </div>
 {% endif %}
 
-{# ===================== Баннер обновления Lab Manager ===================== #}
+{# ===================== Баннер обновления Host Manager ===================== #}
 {% if update_state and update_state.self and update_state.self.update_available %}
 <div class="alert alert-warning d-flex justify-content-between align-items-center shadow-sm">
-    <span><i class="bi bi-arrow-up-circle me-1"></i><strong>Доступно обновление Lab Manager</strong>
+    <span><i class="bi bi-arrow-up-circle me-1"></i><strong>Доступно обновление Host Manager</strong>
         ({{ update_state.self.behind }} коммит(ов) позади).</span>
     <a href="{{ url_for('main.system_page') }}" class="btn btn-sm btn-warning">Перейти к обновлению</a>
 </div>

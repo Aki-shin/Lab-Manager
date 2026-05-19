@@ -1,5 +1,5 @@
 """
-Фоновая периодическая проверка обновлений Lab Manager и приложений.
+Фоновая периодическая проверка обновлений Host Manager и приложений.
 
 Раз в UPDATE_CHECK_HOURS часов (по умолчанию 6) делает `git fetch` для самой
 панели и для каждого git-приложения, сохраняя результат в памяти. UI читает
@@ -32,7 +32,7 @@ def _interval_seconds():
 
 
 def run_check_all():
-    """Однократная синхронная проверка: Lab Manager + все git-приложения."""
+    """Однократная синхронная проверка: Host Manager + все git-приложения."""
     from . import self_update
     from .config import Config
     from .services import check_app_updates
@@ -43,7 +43,7 @@ def run_check_all():
         _state["running"] = True
 
     try:
-        # --- Lab Manager ---
+        # --- Host Manager ---
         self_result = {"update_available": False, "behind": 0,
                        "commit": None, "error": None}
         try:

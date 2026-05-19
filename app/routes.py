@@ -517,7 +517,7 @@ def set_external_port(name):
 
     # Защита от самоповреждения: нельзя занять порт самой панели или SSH
     if ext_port == _panel_port():
-        flash(f"Порт {ext_port} занят панелью Lab Manager", "danger")
+        flash(f"Порт {ext_port} занят панелью Host Manager", "danger")
         return redirect(url_for('main.app_detail', name=safe_name))
     if ext_port in RESERVED_EXTERNAL_PORTS:
         flash(f"Порт {ext_port} зарезервирован системой", "danger")
@@ -546,7 +546,7 @@ def set_external_port(name):
     db.set_external_port(safe_name, ext_port)
     flash(
         f"Внешний порт {ext_port} активен → 127.0.0.1:{internal or '?'} "
-        f"(авторизация через Lab Manager)",
+        f"(авторизация через Host Manager)",
         "success",
     )
     return redirect(url_for('main.app_detail', name=safe_name))
@@ -706,7 +706,7 @@ def users_permissions(user_id):
     )
 
 
-# --- Самообновление Lab Manager (admin only) ---
+# --- Самообновление Host Manager (admin only) ---
 
 @bp.route('/system')
 @admin_required

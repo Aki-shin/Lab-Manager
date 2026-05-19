@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Сторожевой скрипт самообновления Lab Manager.
+Сторожевой скрипт самообновления Host Manager.
 
 Запускается отдельным транзиентным юнитом (`systemd-run`) через ~15 секунд
 после применения обновления. Проверяет, поднялась ли панель; если нет —
@@ -24,7 +24,15 @@ PENDING_FILE = os.path.join(DATA_DIR, ".update_pending")
 FAILED_FILE = os.path.join(DATA_DIR, ".update_failed")
 REQUIREMENTS = os.path.join(BASE_DIR, "requirements.txt")
 VENV_PYTHON = os.path.join(BASE_DIR, "venv", "bin", "python3")
-SERVICE_NAME = "lab-manager.service"
+def _detect_service_name():
+    """Имя systemd-юнита панели (поддержка старого и нового имени)."""
+    for n in ("host-manager.service", "lab-manager.service"):
+        if os.path.exists(os.path.join("/etc/systemd/system", n)):
+            return n
+    return "host-manager.service"
+
+
+SERVICE_NAME = _detect_service_name()
 
 # Параметры проверки здоровья
 HEALTH_ATTEMPTS = 15        # сколько раз опрашивать (×3с ≈ 45с)

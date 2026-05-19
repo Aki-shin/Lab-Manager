@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Инструкция — Lab Manager{% endblock %}
+{% block title %}Инструкция — Host Manager{% endblock %}
 
 {% block content %}
 <style>
@@ -40,7 +40,7 @@
 
         <div class="card shadow-sm mb-4 border-primary">
             <div class="card-body">
-                <h2 class="card-title mb-2">Lab Manager</h2>
+                <h2 class="card-title mb-2">Host Manager</h2>
                 <p class="lead mb-0">
                     Панель управляет пользовательскими приложениями через <code>systemd</code>
                     и пробрасывает их наружу через отдельные TCP-порты с авторизацией.
@@ -69,7 +69,7 @@
                         <div class="card-body">
                             <h6 class="fw-bold">2. systemd-юнит</h6>
                             <small class="text-muted">
-                                Lab Manager создаёт юнит <code>labapp-&lt;имя&gt;.service</code>
+                                Host Manager создаёт юнит <code>labapp-&lt;имя&gt;.service</code>
                                 с <code>Restart=always</code>, пробрасывает <code>PORT</code>/<code>HOST</code>
                                 и запускает процесс на <code>127.0.0.1</code>.
                             </small>
@@ -173,12 +173,12 @@
                 <div class="card-body">
                     <p>
                         Каждому приложению можно назначить <b>внешний порт</b> (1024&ndash;65535).
-                        Lab Manager откроет этот порт на <code>0.0.0.0</code> и будет действовать
+                        Host Manager откроет этот порт на <code>0.0.0.0</code> и будет действовать
                         как <b>прозрачный TCP-прокси с авторизацией</b>:
                     </p>
                     <ol>
                         <li>Пользователь обращается к <code>http://&lt;host&gt;:&lt;порт&gt;/</code>.</li>
-                        <li>Lab Manager читает HTTP-заголовки и извлекает cookie <code>labmgr_session</code>.</li>
+                        <li>Host Manager читает HTTP-заголовки и извлекает cookie <code>labmgr_session</code>.</li>
                         <li>Если сессия валидна и у пользователя есть доступ к приложению — трафик
                             сырым TCP-splice перенаправляется на <code>127.0.0.1:&lt;PORT&gt;</code>.</li>
                         <li>Если не авторизован — 302 на страницу логина панели.</li>
@@ -199,14 +199,14 @@
 
                     <h6 class="fw-bold">Идентификация пользователя:</h6>
                     <p>
-                        При проксировании Lab Manager автоматически добавляет в HTTP-запрос заголовки:
+                        При проксировании Host Manager автоматически добавляет в HTTP-запрос заголовки:
                     </p>
                     <table class="table table-sm table-bordered mb-3">
                         <thead class="table-light">
                             <tr><th>Заголовок</th><th>Значение</th></tr>
                         </thead>
                         <tbody>
-                            <tr><td><code>X-Remote-User</code></td><td>Логин пользователя в Lab Manager</td></tr>
+                            <tr><td><code>X-Remote-User</code></td><td>Логин пользователя в Host Manager</td></tr>
                             <tr><td><code>X-Remote-Name</code></td><td>ФИО пользователя (если заполнено)</td></tr>
                         </tbody>
                     </table>
@@ -309,7 +309,7 @@ app = Flask(__name__)
 
 @app.route(<span class="str">"/"</span>)
 <span class="kw">def</span> index():
-    <span class="kw">return</span> <span class="str">"&lt;h1&gt;Hello from Lab Manager!&lt;/h1&gt;"</span>
+    <span class="kw">return</span> <span class="str">"&lt;h1&gt;Hello from Host Manager!&lt;/h1&gt;"</span>
 
 @app.route(<span class="str">"/api/ping"</span>)
 <span class="kw">def</span> ping():

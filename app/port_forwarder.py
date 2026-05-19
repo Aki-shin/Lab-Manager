@@ -1,10 +1,10 @@
 """
 TCP-форвардер с авторизацией для «прозрачного» проброса внутренних приложений
-на внешние порты Lab Manager.
+на внешние порты Host Manager.
 
 Идея:
-    Внешний клиент → 0.0.0.0:<external_port> (слушает Lab Manager)
-    Lab Manager    → проверяет cookie labmgr_session и права доступа
+    Внешний клиент → 0.0.0.0:<external_port> (слушает Host Manager)
+    Host Manager    → проверяет cookie labmgr_session и права доступа
     OK             → сырой TCP-splice на 127.0.0.1:<internal_port>
     Не авторизован → HTTP 302 на /login?next=<исходный URL>
 
@@ -339,7 +339,7 @@ _flask_app = None
 
 
 def init(flask_app):
-    """Вызывается при старте Lab Manager. Поднимает все сохранённые форвардеры."""
+    """Вызывается при старте Host Manager. Поднимает все сохранённые форвардеры."""
     global _flask_app
     _flask_app = flask_app
     try:
