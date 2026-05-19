@@ -69,6 +69,21 @@ def session_exists(name):
         return False
 
 
+def _new_session_cmd(name):
+    """
+    Команда создания сессии.
+
+    tmux-сервер запускается в отдельном systemd-scope, чтобы он НЕ попал
+    в cgroup сервиса host-manager. Иначе при перезапуске/обновлении панели
+    systemd убивает весь её cgroup — вместе с tmux-сервером и всеми
+    сессиями. Scope живёт независимо, поэтому сессии переживают рестарт.
+    """
+    base = ['tmux', 'new-session', '-d', '-s', name]
+    if shutil.which('systemd-run'):
+        return ['systemd-run', '--scope', '--quiet', '--collect'] + base
+    return base
+
+
 def create_session(name):
     """Создаёт detached tmux-сессию. Возвращает (ok, message)."""
     if not is_available():
@@ -78,7 +93,11 @@ def create_session(name):
     if session_exists(name):
         return False, f'Сессия «{name}» уже существует'
     try:
-        res = _tmux(['new-session', '-d', '-s', name])
+        res = subprocess.run(_new_session_cmd(name),
+                             capture_output=True, text=True, timeout=15)
+        if res.returncode != 0:
+            # Запасной путь: создать без systemd-run
+            res = _tmux(['new-session', '-d', '-s', name])
     except Exception as e:
         return False, f'Ошибка: {e}'
     if res.returncode != 0:
