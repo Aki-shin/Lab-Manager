@@ -20,6 +20,7 @@ import signal
 import termios
 import logging
 import threading
+import subprocess
 
 from .auth import current_user
 from . import tmux_manager
@@ -85,6 +86,14 @@ def _terminal_handler(ws, name):
         if obj.get('t') == 'i':
             pending_input.append(obj.get('d', ''))
 
+    # Гарантируем, что окно сессии подстраивается под размер клиента
+    try:
+        subprocess.run(['tmux', 'set-option', '-t', '=' + name,
+                        'window-size', 'latest'],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
+
     # Поднимаем PTY и запускаем в нём tmux attach
     pid, fd = pty.fork()
     if pid == 0:
@@ -92,7 +101,10 @@ def _terminal_handler(ws, name):
         env = dict(os.environ)
         env['TERM'] = 'xterm-256color'
         try:
-            os.execvpe('tmux', ['tmux', 'attach-session', '-t', '=' + name], env)
+            # -d: отсоединяем прочих клиентов, чтобы окно tmux подстроилось
+            #     именно под размер этого веб-терминала, а не под чужой клиент.
+            os.execvpe('tmux',
+                       ['tmux', 'attach-session', '-d', '-t', '=' + name], env)
         except Exception:
             pass
         os._exit(1)
