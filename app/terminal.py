@@ -12,6 +12,7 @@
 import os
 import pty
 import json
+import time
 import select
 import struct
 import fcntl
@@ -39,6 +40,14 @@ def is_terminal_available():
     return _HAVE_SOCK
 
 
+def _set_winsize(fd, rows, cols):
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ,
+                    struct.pack('HHHH', rows, cols, 0, 0))
+    except Exception:
+        pass
+
+
 def _terminal_handler(ws, name):
     """Обработчик WebSocket-соединения для одной tmux-сессии."""
     # Авторизация: только администратор
@@ -49,6 +58,32 @@ def _terminal_handler(ws, name):
     if not tmux_manager.valid_name(name) or not tmux_manager.session_exists(name):
         ws.close()
         return
+
+    # Ждём первое сообщение с размером терминала (клиент шлёт его сразу при
+    # открытии), чтобы tmux стартовал уже в нужном размере, а не в 80x24.
+    init_cols, init_rows = 120, 32
+    pending_input = []
+    deadline = time.time() + 4
+    while time.time() < deadline:
+        try:
+            msg = ws.receive(timeout=1)
+        except Exception:
+            return
+        if msg is None:
+            continue
+        try:
+            obj = json.loads(msg)
+        except (ValueError, TypeError):
+            continue
+        if obj.get('t') == 'r':
+            try:
+                init_cols = max(1, min(500, int(obj.get('c', 120))))
+                init_rows = max(1, min(300, int(obj.get('r', 32))))
+            except (TypeError, ValueError):
+                pass
+            break
+        if obj.get('t') == 'i':
+            pending_input.append(obj.get('d', ''))
 
     # Поднимаем PTY и запускаем в нём tmux attach
     pid, fd = pty.fork()
@@ -61,6 +96,14 @@ def _terminal_handler(ws, name):
         except Exception:
             pass
         os._exit(1)
+
+    # Сразу выставляем размер PTY — tmux подхватит его при старте или по SIGWINCH
+    _set_winsize(fd, init_rows, init_cols)
+    for d in pending_input:
+        try:
+            os.write(fd, d.encode('utf-8', 'replace'))
+        except Exception:
+            pass
 
     stop = threading.Event()
 
@@ -101,9 +144,8 @@ def _terminal_handler(ws, name):
                 try:
                     cols = max(1, min(500, int(obj.get('c', 80))))
                     rows = max(1, min(300, int(obj.get('r', 24))))
-                    fcntl.ioctl(fd, termios.TIOCSWINSZ,
-                                struct.pack('HHHH', rows, cols, 0, 0))
-                except Exception:
+                    _set_winsize(fd, rows, cols)
+                except (TypeError, ValueError):
                     pass
     except Exception:
         pass
