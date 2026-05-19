@@ -50,6 +50,11 @@
                         <button class="btn btn-primary w-100">⚙️ Создать сервис</button>
                     </form>
 
+                    {% if not app.is_git %}
+                    <hr>
+                    {% include '_attach_repo.html' %}
+                    {% endif %}
+
                 {% else %}
                     <div class="mb-3 d-flex align-items-center justify-content-between">
                         <span>Статус:</span>
@@ -141,6 +146,10 @@
                     </div>
 
                     <hr>
+
+                    {% if not app.is_git %}
+                    {% include '_attach_repo.html' %}
+                    {% endif %}
 
                     <!-- Прозрачный внешний порт -->
                     <div class="card border-info mb-2">

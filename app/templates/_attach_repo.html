@@ -1,0 +1,21 @@
+{# Форма привязки git-репозитория к приложению без git. Требует app.name. #}
+<div class="card border-success mb-3">
+    <div class="card-header bg-success text-white py-2">
+        🔗 Привязать git-репозиторий
+    </div>
+    <div class="card-body py-2">
+        <p class="small text-muted mb-2">
+            Свяжет приложение с репозиторием, чтобы получать обновления через git.
+            <strong>Файлы приложения будут заменены</strong> содержимым репозитория;
+            venv и данные вне репозитория сохранятся.
+        </p>
+        <form action="{{ url_for('main.git_attach', name=app.name) }}" method="post"
+              onsubmit="return confirm('Привязать репозиторий? Текущие файлы приложения будут заменены кодом из репозитория.');">
+            <div class="input-group input-group-sm">
+                <input type="url" name="git_url" class="form-control" required
+                       placeholder="https://github.com/user/repo.git">
+                <button type="submit" class="btn btn-success">Привязать</button>
+            </div>
+        </form>
+    </div>
+</div>

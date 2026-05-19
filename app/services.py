@@ -827,6 +827,91 @@ def check_app_updates(name):
     return res
 
 
+def _detect_default_branch(app_path):
+    """Определяет ветку по умолчанию у origin после fetch."""
+    def _g(args):
+        return subprocess.run(
+            ["git", "-C", app_path] + args,
+            capture_output=True, text=True, timeout=30, env=_git_env()
+        )
+    # 1. origin/HEAD, если установлен
+    res = _g(["symbolic-ref", "refs/remotes/origin/HEAD"])
+    if res.returncode == 0 and res.stdout.strip():
+        return res.stdout.strip().rsplit("/", 1)[-1]
+    # 2. Типовые имена
+    for cand in ("main", "master"):
+        if _g(["rev-parse", "--verify", f"origin/{cand}"]).returncode == 0:
+            return cand
+    # 3. Первая попавшаяся ветка origin
+    res = _g(["branch", "-r"])
+    if res.returncode == 0:
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("origin/") and "->" not in line:
+                return line.split("/", 1)[1]
+    return None
+
+
+def attach_git_repo(name, git_url):
+    """
+    Привязывает существующее (не-git) приложение к git-репозиторию:
+    git init → remote add → fetch → приведение кода к origin/<branch>.
+
+    ВНИМАНИЕ: файлы приложения заменяются содержимым репозитория. Файлы вне
+    репозитория (venv, рантайм-данные) сохраняются. Возвращает (ok, message).
+    """
+    if not is_valid_git_url(git_url):
+        return False, "Неверный формат git URL"
+
+    app_path = os.path.join(Config.APPS_DIR, name)
+    if not os.path.isdir(app_path):
+        return False, "Папка приложения не найдена"
+
+    git_dir = os.path.join(app_path, ".git")
+    if os.path.isdir(git_dir):
+        return False, "Приложение уже привязано к git-репозиторию"
+
+    def _g(args, timeout=120):
+        return subprocess.run(
+            ["git", "-C", app_path] + args,
+            capture_output=True, text=True, timeout=timeout, env=_git_env()
+        )
+
+    try:
+        init = _g(["init"])
+        if init.returncode != 0:
+            return False, f"git init failed: {init.stderr.strip()}"
+
+        _g(["remote", "add", "origin", git_url])
+
+        fetch = _g(["fetch", "--depth", "1", "origin"], timeout=120)
+        if fetch.returncode != 0:
+            shutil.rmtree(git_dir, ignore_errors=True)
+            return False, f"git fetch failed: {fetch.stderr.strip()}"
+
+        branch = _detect_default_branch(app_path)
+        if not branch:
+            shutil.rmtree(git_dir, ignore_errors=True)
+            return False, "Не удалось определить ветку репозитория"
+
+        # Приводим рабочее дерево к origin/<branch> (-f перезаписывает файлы)
+        co = _g(["checkout", "-f", "-B", branch, f"origin/{branch}"])
+        if co.returncode != 0:
+            shutil.rmtree(git_dir, ignore_errors=True)
+            return False, f"git checkout failed: {co.stderr.strip()}"
+
+        # Гарантируем upstream — без него git pull при обновлении не сработает
+        _g(["branch", f"--set-upstream-to=origin/{branch}", branch])
+
+        return True, f"Репозиторий привязан, код синхронизирован с origin/{branch}"
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(git_dir, ignore_errors=True)
+        return False, "Таймаут операции git"
+    except Exception as e:
+        shutil.rmtree(git_dir, ignore_errors=True)
+        return False, f"Ошибка: {e}"
+
+
 # --- Загрузка архивов ---
 
 SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9_.-]+$')
