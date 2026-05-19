@@ -38,4 +38,8 @@ def create_app():
     from . import update_checker
     update_checker.init(app)
 
+    # WebSocket-терминал tmux
+    from . import terminal
+    terminal.init(app)
+
     return app

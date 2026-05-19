@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}tmux — Host Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <h4 class="mb-0"><i class="bi bi-terminal me-1"></i>Сессии tmux
+        <span class="text-muted fs-6">({{ sessions|length }})</span></h4>
+    {% if available %}
+    <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#newTmux">
+        <i class="bi bi-plus-lg"></i> Новая сессия</button>
+    {% endif %}
+</div>
+
+{% if not available %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-1"></i>tmux не установлен на сервере.
+        Установите: <code>apt-get install -y tmux</code> (или заново запустите install.sh).
+    </div>
+{% else %}
+
+    {% if not terminal_available %}
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i>Управление сессиями работает, но живой
+        веб-терминал требует пакет <code>flask-sock</code> — переустановите зависимости
+        (заново запустите install.sh на сервере).
+    </div>
+    {% endif %}
+
+    {% if sessions %}
+    <div class="row g-3">
+        {% for s in sessions %}
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0 text-truncate"><i class="bi bi-window me-1"></i>{{ s.name }}</h5>
+                        {% if s.attached %}
+                            <span class="badge bg-success">подключён</span>
+                        {% else %}
+                            <span class="badge bg-secondary">отсоединён</span>
+                        {% endif %}
+                    </div>
+                    <div class="small text-muted mb-3">
+                        окон: {{ s.windows }} · создана {{ s.created_str }}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('main.tmux_terminal_page', name=s.name) }}"
+                           class="btn btn-sm btn-primary flex-fill"><i class="bi bi-terminal"></i> Терминал</a>
+                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
+                                data-bs-target="#ren-{{ loop.index }}" title="Переименовать">
+                            <i class="bi bi-pencil"></i></button>
+                        <form action="{{ url_for('main.tmux_kill', name=s.name) }}" method="post"
+                              onsubmit="return confirm('Завершить сессию «{{ s.name }}»? Все процессы внутри будут остановлены.');">
+                            <button class="btn btn-sm btn-outline-danger" title="Завершить">
+                                <i class="bi bi-trash"></i></button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Модалка переименования #}
+        <div class="modal fade" id="ren-{{ loop.index }}" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form action="{{ url_for('main.tmux_rename', name=s.name) }}" method="post">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Переименовать «{{ s.name }}»</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <label class="form-label">Новое имя</label>
+                            <input type="text" class="form-control" name="new_name" required
+                                   pattern="[A-Za-z0-9_-]{1,32}" value="{{ s.name }}">
+                            <div class="form-text small">A-Z, a-z, 0-9, _, -, до 32 символов.</div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="submit" class="btn btn-primary">Переименовать</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5 text-muted">
+            <div class="text-secondary" style="font-size: 2.6rem;"><i class="bi bi-terminal"></i></div>
+            <p class="mt-2 mb-3">Активных tmux-сессий нет.</p>
+            <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#newTmux">
+                <i class="bi bi-plus-lg"></i> Создать сессию</button>
+        </div>
+    </div>
+    {% endif %}
+
+{% endif %}
+
+{# Модалка создания сессии #}
+<div class="modal fade" id="newTmux" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('main.tmux_create') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-lg me-1"></i>Новая tmux-сессия</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Имя сессии</label>
+                    <input type="text" class="form-control" name="name" required
+                           pattern="[A-Za-z0-9_-]{1,32}" placeholder="work">
+                    <div class="form-text small">A-Z, a-z, 0-9, _, -, до 32 символов.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-success">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

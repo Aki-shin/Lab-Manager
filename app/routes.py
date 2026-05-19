@@ -24,6 +24,8 @@ from .services import (
 from . import port_forwarder
 from . import self_update
 from . import update_checker
+from . import tmux_manager
+from . import terminal
 
 
 def _safe_name(name):
@@ -174,6 +176,57 @@ def check_updates():
     update_checker.trigger_check_now()
     flash('Проверка обновлений запущена — обновите страницу через ~минуту.', 'info')
     return redirect(url_for('main.index'))
+
+
+# --- tmux-сессии (admin only) ---
+
+@bp.route('/tmux')
+@admin_required
+def tmux_page():
+    """Список tmux-сессий хоста."""
+    return render_template(
+        'tmux.html',
+        available=tmux_manager.is_available(),
+        terminal_available=terminal.is_terminal_available(),
+        sessions=tmux_manager.list_sessions(),
+    )
+
+
+@bp.route('/tmux/create', methods=['POST'])
+@admin_required
+def tmux_create():
+    name = (request.form.get('name') or '').strip()
+    ok, msg = tmux_manager.create_session(name)
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('main.tmux_page'))
+
+
+@bp.route('/tmux/<name>/kill', methods=['POST'])
+@admin_required
+def tmux_kill(name):
+    ok, msg = tmux_manager.kill_session(name)
+    flash(msg, 'warning' if ok else 'danger')
+    return redirect(url_for('main.tmux_page'))
+
+
+@bp.route('/tmux/<name>/rename', methods=['POST'])
+@admin_required
+def tmux_rename(name):
+    new = (request.form.get('new_name') or '').strip()
+    ok, msg = tmux_manager.rename_session(name, new)
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('main.tmux_page'))
+
+
+@bp.route('/tmux/<name>/terminal')
+@admin_required
+def tmux_terminal_page(name):
+    """Страница веб-терминала для tmux-сессии."""
+    if not tmux_manager.session_exists(name):
+        flash('Сессия не найдена', 'danger')
+        return redirect(url_for('main.tmux_page'))
+    return render_template('terminal.html', name=name,
+                           terminal_available=terminal.is_terminal_available())
 
 
 @bp.route('/app/<name>')
