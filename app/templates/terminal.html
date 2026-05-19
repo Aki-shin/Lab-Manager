@@ -15,9 +15,7 @@
         box-sizing: border-box;
         overflow: hidden;
     }
-    /* Внутри прокручивается только сам терминал (история xterm) */
-    #term { width: 100%; height: 100%; overflow: hidden; }
-    #term .xterm, #term .xterm-screen { height: 100% !important; }
+    #term { width: 100%; height: 100%; }
 </style>
 
 <div id="termBar" class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
@@ -52,7 +50,7 @@
     const area = document.getElementById('termArea');
     const bar = document.getElementById('termBar');
 
-    // Явно задаём область терминала: от низа панели-бара до низа окна
+    // Высота области = от низа панели-бара до низа окна (явно, в пикселях)
     function layout() {
         const top = Math.round(bar.getBoundingClientRect().bottom);
         area.style.top = top + 'px';
@@ -70,24 +68,6 @@
     term.loadAddon(fit);
     term.open(document.getElementById('term'));
 
-    function refit() {
-        layout();
-        try { fit.fit(); } catch (e) {}
-    }
-    refit();
-    requestAnimationFrame(refit);
-    setTimeout(refit, 120);
-    setTimeout(refit, 450);
-    window.addEventListener('resize', refit);
-    // Подгоняем терминал при любом изменении размера области
-    if (window.ResizeObserver) {
-        new ResizeObserver(() => { try { fit.fit(); } catch (e) {} }).observe(area);
-    }
-
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/tmux/{{ name }}/ws`);
-    ws.binaryType = 'arraybuffer';
-
     function setStatus(cls, text) {
         statusEl.className = 'badge ' + cls;
         statusEl.textContent = text;
@@ -98,10 +78,43 @@
         }
     }
 
+    // Подгоняем размер. proposeDimensions() возвращает undefined, пока
+    // рендерер xterm не измерил размер символа — поэтому повторяем,
+    // пока не получим валидные размеры.
+    function applyFit() {
+        layout();
+        let dims = null;
+        try { dims = fit.proposeDimensions(); } catch (e) {}
+        if (dims && dims.cols > 0 && dims.rows > 0) {
+            if (dims.cols !== term.cols || dims.rows !== term.rows) {
+                term.resize(dims.cols, dims.rows);
+            }
+            return true;
+        }
+        return false;
+    }
+    function fitLoop(tries) {
+        if (applyFit()) {
+            sendResize();
+            return;
+        }
+        if (tries > 0) setTimeout(function () { fitLoop(tries - 1); }, 50);
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/tmux/{{ name }}/ws`);
+    ws.binaryType = 'arraybuffer';
+
+    // Первичная подгонка — повторяем до готовности рендерера (до ~4 сек)
+    fitLoop(80);
+    window.addEventListener('resize', function () { applyFit(); sendResize(); });
+    if (window.ResizeObserver) {
+        new ResizeObserver(function () { applyFit(); }).observe(area);
+    }
+
     ws.onopen = () => {
         setStatus('bg-success', 'подключено');
-        refit();
-        sendResize();
+        fitLoop(40);
         term.focus();
     };
     ws.onmessage = (e) => {
@@ -117,6 +130,7 @@
     term.onData((d) => {
         if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', d: d }));
     });
+    // term.resize() (из applyFit) → onResize → сообщаем новый размер серверу
     term.onResize(sendResize);
 })();
 </script>
