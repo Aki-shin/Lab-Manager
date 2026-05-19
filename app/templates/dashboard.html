@@ -3,44 +3,81 @@
 {% block title %}Список приложений{% endblock %}
 
 {% block content %}
+<style>
+    .app-card { transition: transform .12s ease, box-shadow .12s ease; }
+    .app-card:hover { transform: translateY(-3px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.12) !important; }
+    .stat-icon { font-size: 1.5rem; opacity: .85; line-height: 1; }
+    .mini-stat .label { font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; }
+    .app-card .card-footer { background: #fff; }
+</style>
+
+{# ===================== Системные метрики ===================== #}
 {% if system %}
-<div class="card shadow-sm mb-4">
-    <div class="card-body py-3">
-        <div class="row text-center g-3">
-            <div class="col-md-3 col-6">
-                <div class="text-muted small">CPU</div>
-                <div class="fs-5 fw-bold">{{ system.cpu }}%</div>
-                <div class="progress" style="height: 4px;">
-                    <div class="progress-bar {% if system.cpu > 80 %}bg-danger{% elif system.cpu > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.cpu }}%"></div>
+{% set ram_bar = 'bg-danger' if system.ram_percent > 80 else ('bg-warning' if system.ram_percent > 50 else 'bg-success') %}
+{% set cpu_bar = 'bg-danger' if system.cpu > 80 else ('bg-warning' if system.cpu > 50 else 'bg-success') %}
+{% set disk_bar = 'bg-danger' if system.disk_percent > 80 else ('bg-warning' if system.disk_percent > 50 else 'bg-success') %}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="text-muted small text-uppercase">CPU</span>
+                    <span class="stat-icon">🖥️</span>
                 </div>
-                <div class="text-muted" style="font-size: 0.7em;">load: {{ system.load_avg|join(' ') }}</div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="text-muted small">RAM</div>
-                <div class="fs-5 fw-bold">{{ system.ram_used_gb }} / {{ system.ram_total_gb }} GB</div>
-                <div class="progress" style="height: 4px;">
-                    <div class="progress-bar {% if system.ram_percent > 80 %}bg-danger{% elif system.ram_percent > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.ram_percent }}%"></div>
+                <div class="fs-4 fw-bold" id="sysCpu">{{ system.cpu }}%</div>
+                <div class="progress mt-1" style="height: 5px;">
+                    <div id="sysCpuBar" class="progress-bar {{ cpu_bar }}" style="width: {{ system.cpu }}%"></div>
                 </div>
-                <div class="text-muted" style="font-size: 0.7em;">{{ system.ram_percent }}%</div>
+                <div class="text-muted mt-1" style="font-size: .72rem;">load: {{ system.load_avg|join(' ') }}</div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="text-muted small">Диск /</div>
-                <div class="fs-5 fw-bold">{{ system.disk_used_gb }} / {{ system.disk_total_gb }} GB</div>
-                <div class="progress" style="height: 4px;">
-                    <div class="progress-bar {% if system.disk_percent > 80 %}bg-danger{% elif system.disk_percent > 50 %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ system.disk_percent }}%"></div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="text-muted small text-uppercase">RAM</span>
+                    <span class="stat-icon">🧠</span>
                 </div>
-                <div class="text-muted" style="font-size: 0.7em;">{{ system.disk_percent }}%</div>
+                <div class="fs-4 fw-bold" id="sysRam">{{ system.ram_used_gb }} / {{ system.ram_total_gb }} GB</div>
+                <div class="progress mt-1" style="height: 5px;">
+                    <div id="sysRamBar" class="progress-bar {{ ram_bar }}" style="width: {{ system.ram_percent }}%"></div>
+                </div>
+                <div class="text-muted mt-1" style="font-size: .72rem;">занято {{ system.ram_percent }}%</div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="text-muted small">Uptime</div>
-                <div class="fs-5 fw-bold">{{ system.uptime_str }}</div>
-                <div class="text-muted" style="font-size: 0.7em;">с момента загрузки</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="text-muted small text-uppercase">Диск /</span>
+                    <span class="stat-icon">💾</span>
+                </div>
+                <div class="fs-4 fw-bold" id="sysDisk">{{ system.disk_used_gb }} / {{ system.disk_total_gb }} GB</div>
+                <div class="progress mt-1" style="height: 5px;">
+                    <div id="sysDiskBar" class="progress-bar {{ disk_bar }}" style="width: {{ system.disk_percent }}%"></div>
+                </div>
+                <div class="text-muted mt-1" style="font-size: .72rem;">занято {{ system.disk_percent }}%</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="text-muted small text-uppercase">Uptime</span>
+                    <span class="stat-icon">⏱️</span>
+                </div>
+                <div class="fs-4 fw-bold" id="sysUptime">{{ system.uptime_str }}</div>
+                <div class="text-muted mt-1" style="font-size: .72rem;">с момента загрузки</div>
             </div>
         </div>
     </div>
 </div>
 {% endif %}
 
+{# ===================== Баннер обновления Lab Manager ===================== #}
 {% if update_state and update_state.self and update_state.self.update_available %}
 <div class="alert alert-warning d-flex justify-content-between align-items-center shadow-sm">
     <span>⬆ <strong>Доступно обновление Lab Manager</strong>
@@ -49,132 +86,141 @@
 </div>
 {% endif %}
 
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h4 class="mb-0 d-inline-block">Ваши приложения</h4>
+{# ===================== Панель приложений ===================== #}
+{% set ns = namespace(running=0, updates=0) %}
+{% for a in apps %}
+    {% if a.active_state == 'active' %}{% set ns.running = ns.running + 1 %}{% endif %}
+    {% if a.update and a.update.update_available %}{% set ns.updates = ns.updates + 1 %}{% endif %}
+{% endfor %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+    <div>
+        <h4 class="mb-1">Ваши приложения <span class="text-muted fs-6">({{ apps|length }})</span></h4>
+        <div class="text-muted small">
+            <span class="text-success">● {{ ns.running }} запущено</span>
+            {% if ns.updates %}<span class="ms-2 text-warning">⬆ {{ ns.updates }} с обновлением</span>{% endif %}
             {% if update_state and update_state.running %}
-                <span class="text-muted small ms-2">🔄 проверка обновлений идёт…</span>
+                <span class="ms-2">🔄 идёт проверка обновлений…</span>
             {% elif update_state and update_state.checked_at %}
-                <span class="text-muted small ms-2">обновления проверены: {{ update_state.checked_at }}</span>
+                <span class="ms-2">проверено: {{ update_state.checked_at }}</span>
             {% endif %}
         </div>
-        <div>
-            <form action="{{ url_for('main.check_updates') }}" method="post" class="d-inline">
-                <button type="submit" class="btn btn-sm btn-outline-secondary">🔄 Проверить обновления</button>
-            </form>
-            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">📦 Загрузить ZIP</button>
-            <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">🔗 Git clone</button>
-        </div>
     </div>
-    <div class="card-body p-0">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Имя</th>
-                    <th>Версия</th>
-                    <th>Статус</th>
-                    <th>Health</th>
-                    <th>Порт</th>
-                    <th>CPU</th>
-                    <th>RAM</th>
-                    <th>Uptime</th>
-                    <th class="text-end">Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for app in apps %}
-                <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('main.app_detail', name=app.name) }}'">
-                    <td class="fw-bold">
-                        {{ app.name }}
-                        {% if app.is_git %}<span class="badge bg-light text-dark border" style="font-size: 0.65em;">git</span>{% endif %}
-                    </td>
-                    <td>
-                        {% if app.is_git %}
-                            {% set u = app.update %}
-                            {% if u and u.commit %}
-                                <span class="font-monospace small text-muted">{{ u.commit }}</span>
-                            {% else %}
-                                <span class="text-muted small">—</span>
-                            {% endif %}
-                            {% if u and u.update_available %}
-                                <a href="{{ url_for('main.app_update_page', name=app.name) }}"
-                                   onclick="event.stopPropagation()"
-                                   class="badge bg-warning text-dark text-decoration-none ms-1"
-                                   title="Доступно обновление — открыть страницу обновлений">⬆ update</a>
-                            {% elif u and u.error %}
-                                <span class="badge bg-light text-muted border ms-1" title="{{ u.error }}">?</span>
-                            {% elif u %}
-                                <span class="badge bg-light text-success border ms-1" title="Актуальная версия">✓</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if app.has_service %}
-                            {% if app.active_state == 'active' %}
-                                <span class="badge bg-success">● Active</span>
-                            {% elif app.active_state == 'failed' %}
-                                <span class="badge bg-danger">● Failed</span>
-                            {% else %}
-                                <span class="badge bg-secondary">● {{ app.active_state }}</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="badge bg-warning text-dark">Не установлен</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if app.active_state == 'active' %}
-                            {% if app.health and app.health < 500 %}
-                                <span class="badge bg-success" title="HTTP {{ app.health }}">✓ {{ app.health }}</span>
-                            {% elif app.health %}
-                                <span class="badge bg-warning text-dark" title="HTTP {{ app.health }}">⚠ {{ app.health }}</span>
-                            {% else %}
-                                <span class="badge bg-danger" title="Нет ответа">✗</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if app.assigned_port %}
-                            <span class="font-monospace text-muted">{{ app.assigned_port }}</span>
-                        {% else %}
-                            <span class="text-muted">—</span>
-                        {% endif %}
-                        {% if app.external_port %}
-                            <span class="badge bg-info ms-1" title="Прозрачный внешний порт">:{{ app.external_port }}</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if app.resources %}
-                            <span class="font-monospace small">{{ app.resources.cpu }}%</span>
-                        {% else %}<span class="text-muted">—</span>{% endif %}
-                    </td>
-                    <td>
-                        {% if app.resources %}
-                            <span class="font-monospace small">{{ app.resources.ram_mb }} MB</span>
-                        {% else %}<span class="text-muted">—</span>{% endif %}
-                    </td>
-                    <td>
-                        {% if app.resources %}
-                            <span class="text-muted small">{{ app.resources.uptime_str }}</span>
-                        {% else %}<span class="text-muted">—</span>{% endif %}
-                    </td>
-                    <td class="text-end" onclick="event.stopPropagation()">
-                        <a href="{{ url_for('main.app_detail', name=app.name) }}" class="btn btn-sm btn-outline-primary">Управление →</a>
-                    </td>
-                </tr>
-            {% else %}
-                <tr><td colspan="9" class="text-center py-5 text-muted">Папка пуста. Загрузите архив или клонируйте git-репозиторий.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
+    <div class="d-flex flex-wrap gap-2">
+        {% if apps %}
+        <input type="search" id="appFilter" class="form-control form-control-sm" style="width: 160px;"
+               placeholder="🔎 Поиск…" autocomplete="off">
+        {% endif %}
+        <form action="{{ url_for('main.check_updates') }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">🔄 Проверить обновления</button>
+        </form>
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">📦 Загрузить ZIP</button>
+        <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">🔗 Git clone</button>
     </div>
 </div>
 
-<!-- Модалка: загрузка zip -->
+{% if apps %}
+<div class="row g-3" id="appGrid">
+    {% for app in apps %}
+    <div class="col-12 col-md-6 col-xl-4 app-card-col" data-name="{{ app.name|lower }}">
+        <div class="card shadow-sm h-100 app-card">
+            <div class="card-body pb-2">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="mb-0 text-truncate" style="max-width: 65%;">
+                        <a href="{{ url_for('main.app_detail', name=app.name) }}"
+                           class="text-decoration-none text-dark">{{ app.name }}</a>
+                        {% if app.is_git %}<span class="badge bg-light text-dark border align-middle"
+                              style="font-size: .55em;">git</span>{% endif %}
+                    </h5>
+                    {% if app.has_service %}
+                        {% if app.active_state == 'active' %}
+                            <span class="badge bg-success">● Active</span>
+                        {% elif app.active_state == 'failed' %}
+                            <span class="badge bg-danger">● Failed</span>
+                        {% else %}
+                            <span class="badge bg-secondary">● {{ app.active_state }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-warning text-dark">Не установлен</span>
+                    {% endif %}
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-3 small">
+                    {% if app.is_git %}
+                        {% set u = app.update %}
+                        <span class="font-monospace text-muted" title="Текущий коммит">{{ u.commit if u and u.commit else '—' }}</span>
+                        {% if u and u.update_available %}
+                            <a href="{{ url_for('main.app_update_page', name=app.name) }}"
+                               class="badge bg-warning text-dark text-decoration-none">⬆ обновление</a>
+                        {% elif u and u.error %}
+                            <span class="badge bg-light text-muted border" title="{{ u.error }}">? проверка</span>
+                        {% elif u %}
+                            <span class="badge bg-light text-success border">✓ актуально</span>
+                        {% endif %}
+                    {% endif %}
+                    {% if app.assigned_port %}
+                        <span class="text-muted">порт <span class="font-monospace">{{ app.assigned_port }}</span></span>
+                    {% endif %}
+                    {% if app.external_port %}
+                        <span class="badge bg-info" title="Прозрачный внешний порт">:{{ app.external_port }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="row g-1 text-center mini-stat">
+                    <div class="col-3">
+                        <div class="label text-muted">Health</div>
+                        <div class="fw-semibold small">
+                            {% if app.active_state == 'active' and app.health and app.health < 500 %}
+                                <span class="text-success" title="HTTP {{ app.health }}">✓</span>
+                            {% elif app.active_state == 'active' and app.health %}
+                                <span class="text-warning" title="HTTP {{ app.health }}">⚠</span>
+                            {% elif app.active_state == 'active' %}
+                                <span class="text-danger" title="Нет ответа">✗</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="label text-muted">CPU</div>
+                        <div class="fw-semibold small">{% if app.resources %}{{ app.resources.cpu }}%{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="label text-muted">RAM</div>
+                        <div class="fw-semibold small">{% if app.resources %}{{ app.resources.ram_mb }}<span class="text-muted">M</span>{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="label text-muted">Uptime</div>
+                        <div class="fw-semibold small">{% if app.resources %}{{ app.resources.uptime_str }}{% else %}<span class="text-muted">—</span>{% endif %}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer border-top-0 d-flex gap-2 pt-0 pb-3">
+                {% if app.active_state == 'active' and app.external_port %}
+                <a href="//{{ request.host.split(':')[0] }}:{{ app.external_port }}/" target="_blank"
+                   class="btn btn-sm btn-success flex-fill">🚀 Открыть</a>
+                {% endif %}
+                <a href="{{ url_for('main.app_detail', name=app.name) }}"
+                   class="btn btn-sm btn-outline-primary flex-fill">Управление →</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<div id="noMatch" class="text-center text-muted py-5 d-none">Ничего не найдено.</div>
+
+{% else %}
+<div class="card shadow-sm">
+    <div class="card-body text-center py-5 text-muted">
+        <div style="font-size: 2.6rem;">📦</div>
+        <p class="mt-2 mb-3">Пока нет ни одного приложения.<br>Загрузите архив или клонируйте git-репозиторий.</p>
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">📦 Загрузить ZIP</button>
+        <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">🔗 Git clone</button>
+    </div>
+</div>
+{% endif %}
+
+{# ===================== Модалка: загрузка zip ===================== #}
 <div class="modal fade" id="uploadModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -204,7 +250,7 @@
     </div>
 </div>
 
-<!-- Модалка: git clone -->
+{# ===================== Модалка: git clone ===================== #}
 <div class="modal fade" id="gitModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -234,21 +280,44 @@
 </div>
 
 <script>
-// Авто-обновление системных метрик каждые 5 секунд
-setInterval(async () => {
+// --- Живое обновление системных метрик ---
+function barClass(p) { return p > 80 ? 'bg-danger' : (p > 50 ? 'bg-warning' : 'bg-success'); }
+
+async function refreshSystem() {
     try {
         const r = await fetch('{{ url_for("main.api_system_metrics") }}');
         const d = await r.json();
-        if (!d.cpu && d.cpu !== 0) return;
-        // Обновляем только числа, чтобы не дёргать разметку
-        const cards = document.querySelectorAll('.card-body.py-3 .fs-5');
-        if (cards.length >= 4) {
-            cards[0].textContent = d.cpu + '%';
-            cards[1].textContent = d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB';
-            cards[2].textContent = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
-            cards[3].textContent = d.uptime_str;
-        }
+        if (d.cpu === undefined) return;
+        const setText = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+        const setBar = (id, p) => {
+            const e = document.getElementById(id);
+            if (e) { e.style.width = p + '%'; e.className = 'progress-bar ' + barClass(p); }
+        };
+        setText('sysCpu', d.cpu + '%');
+        setText('sysRam', d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB');
+        setText('sysDisk', d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB');
+        setText('sysUptime', d.uptime_str);
+        setBar('sysCpuBar', d.cpu);
+        setBar('sysRamBar', d.ram_percent);
+        setBar('sysDiskBar', d.disk_percent);
     } catch (e) {}
-}, 5000);
+}
+setInterval(refreshSystem, 5000);
+
+// --- Поиск по приложениям ---
+const appFilter = document.getElementById('appFilter');
+if (appFilter) {
+    appFilter.addEventListener('input', () => {
+        const q = appFilter.value.trim().toLowerCase();
+        let visible = 0;
+        document.querySelectorAll('.app-card-col').forEach(col => {
+            const match = col.dataset.name.includes(q);
+            col.classList.toggle('d-none', !match);
+            if (match) visible++;
+        });
+        const noMatch = document.getElementById('noMatch');
+        if (noMatch) noMatch.classList.toggle('d-none', visible !== 0);
+    });
+}
 </script>
 {% endblock %}

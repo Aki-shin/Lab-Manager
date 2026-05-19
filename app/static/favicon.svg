@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#212529"/>
-  <text x="32" y="43" font-family="'Segoe UI',Arial,Helvetica,sans-serif"
-        font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">LM</text>
+  <rect width="64" height="64" rx="14" fill="#0d6efd"/>
+  <rect x="14" y="15" width="36" height="15" rx="4" fill="#ffffff"/>
+  <rect x="14" y="34" width="36" height="15" rx="4" fill="#ffffff"/>
+  <circle cx="21.5" cy="22.5" r="3" fill="#0d6efd"/>
+  <circle cx="21.5" cy="41.5" r="3" fill="#0d6efd"/>
 </svg>
