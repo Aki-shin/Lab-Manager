@@ -183,7 +183,12 @@
                                     {% endif %}
                                 </div>
                                 <div class="form-text small">
-                                    1024-65535, не равен внутреннему ({{ app.assigned_port or '—' }}) и не 80.
+                                    1024-65535, не равен порту панели.
+                                    {% if forward_distinct %}
+                                        Может совпадать с внутренним портом ({{ app.assigned_port or '—' }}).
+                                    {% else %}
+                                        Не должен совпадать с внутренним ({{ app.assigned_port or '—' }}).
+                                    {% endif %}
                                 </div>
                             </form>
                         </div>

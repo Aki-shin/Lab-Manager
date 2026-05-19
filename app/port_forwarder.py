@@ -33,6 +33,20 @@ UPSTREAM_CONNECT_TIMEOUT = 5.0  # подключение к внутреннем
 IDLE_TIMEOUT = 600              # 10 минут на простаивающее соединение (WS/SSE живут долго)
 
 
+def get_bind_ip():
+    """
+    Интерфейс, на котором слушают форвардеры.
+
+    По умолчанию 0.0.0.0 (все интерфейсы). Если в окружении задан
+    FORWARD_BIND_IP=<конкретный IP> — форвардеры биндятся только на него.
+    Это позволяет внешнему порту совпадать с внутренним портом приложения:
+    приложение слушает 127.0.0.1:PORT, форвардер — <IP>:PORT; адреса разные,
+    конфликта нет (в отличие от 0.0.0.0, который перекрывает 127.0.0.1).
+    """
+    ip = os.environ.get('FORWARD_BIND_IP', '').strip()
+    return ip or '0.0.0.0'
+
+
 class PortForwarder:
     """Один форвардер = один внешний порт, слушающий 0.0.0.0."""
 
@@ -48,9 +62,10 @@ class PortForwarder:
         if self._thread and self._thread.is_alive():
             return
 
+        bind_ip = get_bind_ip()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(('0.0.0.0', self.external_port))
+        sock.bind((bind_ip, self.external_port))
         sock.listen(128)
         sock.settimeout(ACCEPT_TIMEOUT)
 
@@ -62,7 +77,7 @@ class PortForwarder:
             daemon=True,
         )
         self._thread.start()
-        log.info(f"[forwarder] {self.name}: слушаю 0.0.0.0:{self.external_port}")
+        log.info(f"[forwarder] {self.name}: слушаю {bind_ip}:{self.external_port}")
 
     def stop(self):
         self._stop.set()

@@ -157,7 +157,8 @@ def app_detail(name):
     if app_data['has_service']:
         logs = get_app_logs(safe_name)
 
-    return render_template("detail.html", app=app_data, logs=logs)
+    return render_template("detail.html", app=app_data, logs=logs,
+                           forward_distinct=_forwarder_on_distinct_iface())
 
 
 # --- Управление сервисами ---
@@ -446,6 +447,16 @@ def _panel_port():
         return 80
 
 
+def _forwarder_on_distinct_iface():
+    """
+    True, если форвардеры биндятся на конкретный интерфейс (FORWARD_BIND_IP),
+    а не на 0.0.0.0/loopback. В этом случае внешний порт может совпадать с
+    внутренним портом приложения — адреса (IP:порт) разные, конфликта нет.
+    """
+    ip = port_forwarder.get_bind_ip()
+    return ip not in ('0.0.0.0', '127.0.0.1', 'localhost', '::')
+
+
 @bp.route('/external/<name>', methods=['POST'])
 @admin_required
 def set_external_port(name):
@@ -482,11 +493,14 @@ def set_external_port(name):
         flash(f"Порт {ext_port} зарезервирован системой", "danger")
         return redirect(url_for('main.app_detail', name=safe_name))
 
-    # Нельзя совпадать с внутренним портом того же приложения
-    # (иначе 0.0.0.0:port конфликтует с 127.0.0.1:port)
+    # Внешний порт не должен совпадать с внутренним портом того же приложения:
+    # 0.0.0.0:port конфликтует с 127.0.0.1:port. Но если форвардеры биндятся
+    # на конкретный интерфейс (FORWARD_BIND_IP), адреса разные — конфликта нет.
     internal = get_assigned_port(safe_name)
-    if internal and int(internal) == ext_port:
-        flash("Внешний порт не может совпадать с внутренним портом приложения", "danger")
+    if (internal and int(internal) == ext_port
+            and not _forwarder_on_distinct_iface()):
+        flash("Внешний порт не может совпадать с внутренним портом приложения "
+              "(задайте FORWARD_BIND_IP, чтобы снять это ограничение)", "danger")
         return redirect(url_for('main.app_detail', name=safe_name))
 
     # Пытаемся поднять форвардер
