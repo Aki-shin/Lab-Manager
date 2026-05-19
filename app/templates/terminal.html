@@ -27,6 +27,7 @@
         <span class="text-muted small d-none d-md-inline">
             <i class="bi bi-info-circle"></i> Закрытие вкладки лишь отсоединяет от сессии
         </span>
+        <span id="termSize" class="badge bg-dark border text-light font-monospace" title="Размер терминала (столбцы×строки)">—</span>
         <span id="connStatus" class="badge bg-secondary">подключение…</span>
     </div>
 </div>
@@ -102,6 +103,12 @@
                 && (dims.cols !== term.cols || dims.rows !== term.rows)) {
             term.resize(dims.cols, dims.rows);
         }
+        updateSizeLabel();
+    }
+
+    function updateSizeLabel() {
+        const el = document.getElementById('termSize');
+        if (el) el.textContent = term.cols + '×' + term.rows;
     }
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -148,7 +155,8 @@
         if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', d: d }));
     });
     // term.resize() → onResize → сообщаем новый размер серверу
-    term.onResize(sendResize);
+    term.onResize(() => { sendResize(); updateSizeLabel(); });
+    updateSizeLabel();
 })();
 </script>
 {% endblock %}
