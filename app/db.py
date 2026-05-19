@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     app_name TEXT PRIMARY KEY,
     external_port INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -201,6 +206,25 @@ def delete_app_settings(app_name):
     """Полная очистка настроек приложения (при удалении сервиса)."""
     with get_db() as conn:
         conn.execute("DELETE FROM app_settings WHERE app_name = ?", (app_name,))
+
+
+# --- Глобальные настройки (key-value) ---
+
+def get_setting(key, default=None):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+        return row['value'] if row else default
+
+
+def set_setting(key, value):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value)
+        )
 
 
 def user_can_access_app(user, app_name):

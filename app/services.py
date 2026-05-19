@@ -158,6 +158,19 @@ def get_app_status(name, with_metrics=False):
     }
 
 
+def get_local_ipv4s():
+    """IPv4-адреса локальных интерфейсов сервера (кроме loopback)."""
+    ips = []
+    try:
+        for _iface, addrs in psutil.net_if_addrs().items():
+            for a in addrs:
+                if a.family == socket.AF_INET and not a.address.startswith('127.'):
+                    ips.append(a.address)
+    except Exception:
+        pass
+    return sorted(set(ips))
+
+
 def get_system_stats():
     """Системные ресурсы для дашборда."""
     try:

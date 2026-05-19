@@ -37,14 +37,36 @@ def get_bind_ip():
     """
     Интерфейс, на котором слушают форвардеры.
 
-    По умолчанию 0.0.0.0 (все интерфейсы). Если в окружении задан
-    FORWARD_BIND_IP=<конкретный IP> — форвардеры биндятся только на него.
-    Это позволяет внешнему порту совпадать с внутренним портом приложения:
-    приложение слушает 127.0.0.1:PORT, форвардер — <IP>:PORT; адреса разные,
-    конфликта нет (в отличие от 0.0.0.0, который перекрывает 127.0.0.1).
+    Источник (по приоритету): настройка из БД (задаётся в UI) → переменная
+    окружения FORWARD_BIND_IP → 0.0.0.0 (все интерфейсы).
+
+    Конкретный IP позволяет внешнему порту совпадать с внутренним портом
+    приложения: приложение слушает 127.0.0.1:PORT, форвардер — <IP>:PORT;
+    адреса разные, конфликта нет (в отличие от 0.0.0.0, который перекрывает
+    127.0.0.1).
     """
-    ip = os.environ.get('FORWARD_BIND_IP', '').strip()
-    return ip or '0.0.0.0'
+    val = None
+    try:
+        val = db.get_setting('forward_bind_ip')
+    except Exception:
+        val = None
+    if val is None:
+        val = os.environ.get('FORWARD_BIND_IP', '')
+    val = (val or '').strip()
+    return val or '0.0.0.0'
+
+
+def can_bind(ip):
+    """Проверяет, что на адресе можно открыть слушающий сокет
+    (т.е. это адрес локального интерфейса сервера)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((ip, 0))
+        s.close()
+        return True
+    except OSError:
+        return False
 
 
 class PortForwarder:
@@ -357,6 +379,24 @@ def stop_forwarder(name):
         fwd = _forwarders.pop(name, None)
         if fwd:
             fwd.stop()
+
+
+def rebind_all():
+    """
+    Перезапускает все активные форвардеры на текущем bind-IP.
+    Вызывается после смены интерфейса в настройках.
+    Возвращает список (name, error) для тех, кого не удалось поднять.
+    """
+    errors = []
+    with _lock:
+        for name, fwd in list(_forwarders.items()):
+            port = fwd.external_port
+            try:
+                _start_unlocked(name, port)
+            except Exception as e:
+                _forwarders.pop(name, None)
+                errors.append((name, str(e)))
+    return errors
 
 
 def get_forwarder_status(name):

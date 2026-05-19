@@ -1,5 +1,6 @@
 import os
 import re
+import ipaddress
 import tempfile
 from urllib.parse import urlparse
 from flask import (
@@ -14,7 +15,7 @@ from .services import (
     find_free_port, get_app_status, get_app_logs,
     create_app_service, update_app_service, control_service, delete_app_service,
     run_diagnostic_test, parse_service_file,
-    get_system_stats, stream_app_logs,
+    get_system_stats, get_local_ipv4s, stream_app_logs,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
     setup_app_environment, get_assigned_port, update_app_with_rollback,
     attach_git_repo, check_app_updates, get_app_git_info,
@@ -115,7 +116,9 @@ def index():
                     apps.append(status)
         system = get_system_stats()
         return render_template("dashboard.html", apps=apps, system=system,
-                               update_state=update_checker.get_state())
+                               update_state=update_checker.get_state(),
+                               forward_bind_ip=port_forwarder.get_bind_ip(),
+                               local_ips=get_local_ipv4s())
 
     # Обычный пользователь — только доступные приложения
     allowed = set(db.get_user_permissions(user['id']))
@@ -135,6 +138,33 @@ def index():
 @login_required
 def help_page():
     return render_template("help.html")
+
+
+@bp.route('/settings/network', methods=['POST'])
+@admin_required
+def settings_network():
+    """Сохраняет интерфейс форвардеров и перепривязывает их."""
+    raw = (request.form.get('forward_bind_ip') or '').strip()
+
+    if raw in ('', '0.0.0.0'):
+        db.set_setting('forward_bind_ip', '')
+        flash('Форвардеры слушают все интерфейсы (0.0.0.0)', 'success')
+    else:
+        try:
+            ipaddress.IPv4Address(raw)
+        except ValueError:
+            flash('Некорректный IPv4-адрес', 'danger')
+            return redirect(url_for('main.index'))
+        if not port_forwarder.can_bind(raw):
+            flash(f'Не удалось привязаться к {raw} — на сервере нет такого интерфейса',
+                  'danger')
+            return redirect(url_for('main.index'))
+        db.set_setting('forward_bind_ip', raw)
+        flash(f'Форвардеры теперь слушают {raw}', 'success')
+
+    for name, err in port_forwarder.rebind_all():
+        flash(f'Форвардер «{name}» не удалось перезапустить: {err}', 'warning')
+    return redirect(url_for('main.index'))
 
 
 @bp.route('/check-updates', methods=['POST'])

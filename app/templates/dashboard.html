@@ -115,6 +115,8 @@
             <button type="submit" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-arrow-repeat"></i> Проверить обновления</button>
         </form>
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#netModal">
+            <i class="bi bi-hdd-network"></i> Сеть</button>
         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
             <i class="bi bi-file-earmark-zip"></i> Загрузить ZIP</button>
         <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#gitModal">
@@ -288,7 +290,54 @@
     </div>
 </div>
 
+{# ===================== Модалка: настройки сети ===================== #}
+<div class="modal fade" id="netModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('main.settings_network') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-hdd-network me-1"></i>Сеть — интерфейс форвардеров</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">
+                        Адрес, на котором приложения публикуются на внешних портах.
+                        <code>0.0.0.0</code> — все интерфейсы. Конкретный IP сервера
+                        позволяет внешнему порту совпадать с внутренним портом приложения.
+                    </p>
+                    <label class="form-label">IP-адрес</label>
+                    <input type="text" class="form-control" name="forward_bind_ip" id="bindIpInput"
+                           value="{{ forward_bind_ip if forward_bind_ip != '0.0.0.0' else '' }}"
+                           placeholder="0.0.0.0 (все интерфейсы)">
+                    <div class="mt-2 small">
+                        <span class="text-muted">Подставить:</span>
+                        <button type="button" class="badge bg-light text-secondary border ip-suggest" data-ip="">0.0.0.0</button>
+                        {% for ip in local_ips %}
+                            <button type="button" class="badge bg-light text-primary border ip-suggest" data-ip="{{ ip }}">{{ ip }}</button>
+                        {% endfor %}
+                    </div>
+                    <div class="alert alert-warning small mt-3 mb-0">
+                        При сохранении все активные форвардеры будут перезапущены на новом адресе.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+// --- Подстановка IP в настройках сети ---
+document.querySelectorAll('.ip-suggest').forEach(b => {
+    b.addEventListener('click', () => {
+        const inp = document.getElementById('bindIpInput');
+        if (inp) inp.value = b.dataset.ip;
+    });
+});
+
 // --- Живое обновление системных метрик ---
 function barClass(p) { return p > 80 ? 'bg-danger' : (p > 50 ? 'bg-warning' : 'bg-success'); }
 
