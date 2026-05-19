@@ -50,10 +50,9 @@
                         <button class="btn btn-primary w-100">⚙️ Создать сервис</button>
                     </form>
 
-                    {% if not app.is_git %}
                     <hr>
-                    {% include '_attach_repo.html' %}
-                    {% endif %}
+                    <a href="{{ url_for('main.app_update_page', name=app.name) }}"
+                       class="btn btn-outline-success w-100">🔄 Обновления приложения</a>
 
                 {% else %}
                     <div class="mb-3 d-flex align-items-center justify-content-between">
@@ -137,19 +136,11 @@
                             <button type="submit" class="btn btn-outline-secondary w-100">⚙️ Настроить окружение (venv)</button>
                         </form>
 
-                        {% if app.is_git %}
-                        <form action="{{ url_for('main.git_pull', name=app.name) }}" method="post"
-                              onsubmit="return confirm('Обновить приложение из git? При поломке будет выполнен автооткат. Проверка займёт ~20 секунд.');">
-                            <button type="submit" class="btn btn-outline-success w-100">⬇ Обновить из git (с автооткатом)</button>
-                        </form>
-                        {% endif %}
+                        <a href="{{ url_for('main.app_update_page', name=app.name) }}"
+                           class="btn btn-outline-success w-100">🔄 Обновления приложения</a>
                     </div>
 
                     <hr>
-
-                    {% if not app.is_git %}
-                    {% include '_attach_repo.html' %}
-                    {% endif %}
 
                     <!-- Прозрачный внешний порт -->
                     <div class="card border-info mb-2">

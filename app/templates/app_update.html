@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Обновления — {{ name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.app_detail', name=name) }}">{{ name }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Обновления</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+
+    <h3 class="mb-4">🔄 Обновление приложения: {{ name }}</h3>
+
+    {% if not version.is_git %}
+      <div class="alert alert-secondary">
+        Приложение не привязано к git-репозиторию — обновления через git недоступны.
+        Привяжите репозиторий, чтобы включить обновление.
+      </div>
+      {% include '_attach_repo.html' %}
+
+    {% else %}
+
+      {# --- Текущая версия --- #}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-light">Текущая версия</div>
+        <div class="card-body">
+          <table class="table table-sm mb-0">
+            <tr><th style="width: 160px;">Коммит</th><td><code>{{ version.commit or '—' }}</code></td></tr>
+            <tr><th>Ветка</th><td><code>{{ version.branch or '—' }}</code></td></tr>
+            <tr><th>Дата</th><td>{{ version.date or '—' }}</td></tr>
+            <tr><th>Описание</th><td>{{ version.subject or '—' }}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      {# --- Проверка и установка --- #}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-light">Обновление через git</div>
+        <div class="card-body">
+
+          <form action="{{ url_for('main.app_update_check', name=name) }}" method="post" class="mb-3">
+            <button type="submit" class="btn btn-outline-primary">🔄 Проверить обновления</button>
+            <span class="text-muted small ms-2">
+              Выполняет <code>git fetch</code> и сравнивает с <code>origin</code>.
+            </span>
+          </form>
+
+          {% if check %}
+            {% if check.error %}
+              <div class="alert alert-danger">{{ check.error }}</div>
+            {% elif not check.update_available %}
+              <div class="alert alert-success">✓ Установлена последняя версия — обновлений нет.</div>
+            {% else %}
+              <div class="alert alert-info">Доступно обновление приложения.</div>
+              {% if check.commits %}
+              <table class="table table-sm">
+                <thead><tr><th>Коммит</th><th>Дата</th><th>Описание</th></tr></thead>
+                <tbody>
+                  {% for c in check.commits %}
+                  <tr>
+                    <td><code>{{ c.hash }}</code></td>
+                    <td class="text-muted small">{{ c.date }}</td>
+                    <td>{{ c.subject }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% endif %}
+            {% endif %}
+          {% endif %}
+
+          <form action="{{ url_for('main.git_pull', name=name) }}" method="post"
+                onsubmit="return confirm('Обновить приложение из git? При поломке будет выполнен автооткат. Проверка займёт ~20 секунд.');">
+            <button type="submit" class="btn btn-success">⬇ Установить обновление</button>
+          </form>
+
+          <div class="alert alert-warning small mt-3 mb-0">
+            <strong>Как это работает:</strong> панель сохранит точку отката, выполнит
+            <code>git pull</code>, пересоберёт venv, перезапустит сервис и проверит
+            работоспособность приложения (~20 секунд). Если приложение сломается —
+            обновление будет <strong>автоматически откачено</strong> к предыдущей версии,
+            а на странице результата появится журнал ошибки.
+          </div>
+
+        </div>
+      </div>
+
+    {% endif %}
+
+    <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">
+      ← Вернуться к приложению
+    </a>
+
+  </div>
+</div>
+{% endblock %}

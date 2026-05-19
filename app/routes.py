@@ -17,7 +17,7 @@ from .services import (
     get_system_stats, stream_app_logs,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
     setup_app_environment, get_assigned_port, update_app_with_rollback,
-    attach_git_repo,
+    attach_git_repo, check_app_updates, get_app_git_info,
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
@@ -365,6 +365,35 @@ def git_clone():
         flash(f"Окружение: {setup_msg}", "info" if setup_ok else "warning")
         return redirect(url_for('main.app_detail', name=name))
     return redirect(url_for('main.index'))
+
+
+@bp.route('/app/<name>/update')
+@admin_required
+def app_update_page(name):
+    """Страница обновлений приложения — аналог вкладки «Система»."""
+    safe_name = _safe_name(name)
+    return render_template(
+        'app_update.html',
+        name=safe_name,
+        version=get_app_git_info(safe_name),
+        check=None,
+    )
+
+
+@bp.route('/app/<name>/update/check', methods=['POST'])
+@admin_required
+def app_update_check(name):
+    """git fetch + сравнение с origin для конкретного приложения."""
+    safe_name = _safe_name(name)
+    check = check_app_updates(safe_name)
+    if check.get('error'):
+        flash(f"Проверка обновлений: {check['error']}", 'danger')
+    return render_template(
+        'app_update.html',
+        name=safe_name,
+        version=get_app_git_info(safe_name),
+        check=check,
+    )
 
 
 @bp.route('/git/attach/<name>', methods=['POST'])

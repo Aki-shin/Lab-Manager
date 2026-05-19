@@ -98,7 +98,10 @@
                                 <span class="text-muted small">—</span>
                             {% endif %}
                             {% if u and u.update_available %}
-                                <span class="badge bg-warning text-dark ms-1" title="Доступно обновление в репозитории">⬆ update</span>
+                                <a href="{{ url_for('main.app_update_page', name=app.name) }}"
+                                   onclick="event.stopPropagation()"
+                                   class="badge bg-warning text-dark text-decoration-none ms-1"
+                                   title="Доступно обновление — открыть страницу обновлений">⬆ update</a>
                             {% elif u and u.error %}
                                 <span class="badge bg-light text-muted border ms-1" title="{{ u.error }}">?</span>
                             {% elif u %}

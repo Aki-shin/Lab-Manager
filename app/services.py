@@ -789,7 +789,7 @@ def check_app_updates(name):
                 "update_available": False, "error": None}
 
     res = {"is_git": True, "commit": None, "branch": None,
-           "update_available": False, "error": None}
+           "update_available": False, "commits": [], "error": None}
 
     def _g(args, timeout=60):
         return subprocess.run(
@@ -820,11 +820,50 @@ def check_app_updates(name):
         remote_sha = remote.stdout.strip()
         if head and remote_sha and head != remote_sha:
             res["update_available"] = True
+            # Список входящих коммитов (best-effort: на shallow-клоне может
+            # быть неполным, но факт наличия обновления уже подтверждён по SHA)
+            logres = _g(["log", "--format=%h\x1f%cI\x1f%s",
+                         f"HEAD..origin/{branch}"])
+            if logres.returncode == 0:
+                for line in logres.stdout.strip().split("\n"):
+                    if "\x1f" in line:
+                        h, d, s = line.split("\x1f", 2)
+                        res["commits"].append(
+                            {"hash": h, "date": d, "subject": s})
     except subprocess.TimeoutExpired:
         res["error"] = "таймаут git"
     except Exception as e:
         res["error"] = str(e)[:200]
     return res
+
+
+def get_app_git_info(name):
+    """Версия приложения из git: commit / branch / date / subject."""
+    app_path = os.path.join(Config.APPS_DIR, name)
+    info = {"is_git": False, "commit": None, "commit_full": None,
+            "branch": None, "date": None, "subject": None}
+    if not os.path.isdir(os.path.join(app_path, ".git")):
+        return info
+    info["is_git"] = True
+
+    def _g(args):
+        return subprocess.run(
+            ["git", "-C", app_path] + args,
+            capture_output=True, text=True, timeout=15, env=_git_env()
+        )
+    try:
+        br = _g(["rev-parse", "--abbrev-ref", "HEAD"])
+        if br.returncode == 0:
+            info["branch"] = br.stdout.strip()
+        res = _g(["log", "-1", "--format=%h%n%H%n%cI%n%s"])
+        if res.returncode == 0:
+            parts = res.stdout.strip().split("\n", 3)
+            if len(parts) == 4:
+                (info["commit"], info["commit_full"],
+                 info["date"], info["subject"]) = parts
+    except Exception:
+        pass
+    return info
 
 
 def _detect_default_branch(app_path):
