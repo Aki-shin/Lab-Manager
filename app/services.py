@@ -810,6 +810,13 @@ def update_app_with_rollback(name):
     # 5. Проверка работоспособности
     healthy, reason = _wait_app_healthy(name)
     if healthy:
+        # Сбрасываем кэш «доступно обновление» для этого приложения,
+        # чтобы бейдж на дашборде исчезал сразу.
+        try:
+            from . import update_checker
+            update_checker.mark_app_up_to_date(name, new_commit)
+        except Exception:
+            pass
         return True, (f"Приложение обновлено до {new_commit[:7]} "
                       f"и работает штатно. {setup_msg}."), None
 

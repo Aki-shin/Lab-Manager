@@ -98,6 +98,34 @@ def get_state():
         }
 
 
+def mark_self_up_to_date(commit):
+    """Сбрасывает кэш состояния панели после успешного самообновления —
+    чтобы баннер «доступно обновление» исчезал сразу, не дожидаясь
+    очередной фоновой проверки (раз в UPDATE_CHECK_HOURS)."""
+    with _lock:
+        _state["self"] = {
+            "update_available": False,
+            "behind": 0,
+            "commit": commit,
+            "error": None,
+        }
+        _state["checked_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def mark_app_up_to_date(name, commit):
+    """То же для приложения после успешного обновления."""
+    with _lock:
+        _state["apps"][name] = {
+            "is_git": True,
+            "commit": (commit[:7] if commit else None),
+            "branch": _state["apps"].get(name, {}).get("branch"),
+            "update_available": False,
+            "commits": [],
+            "error": None,
+        }
+        _state["checked_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+
+
 def get_app_update(name):
     """Кэшированный статус обновлений конкретного приложения или None."""
     with _lock:

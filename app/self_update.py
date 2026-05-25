@@ -315,6 +315,14 @@ def do_update():
         pass
     _write_pending(new_commit, rollback)
 
+    # Сбрасываем кэш «доступно обновление» — баннер на дашборде исчезнет сразу,
+    # не дожидаясь следующей фоновой проверки
+    try:
+        from . import update_checker
+        update_checker.mark_self_up_to_date(new_commit)
+    except Exception:
+        pass
+
     _schedule_watchdog()
     schedule_restart()
     return True, (f"Код обновлён, {pip_msg}. Панель перезапустится через ~3 секунды. "
