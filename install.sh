@@ -158,6 +158,8 @@ fi
 
 info "Создаю systemd service..."
 
+chmod +x "${PROJECT_DIR}/pre_start.sh" 2>/dev/null || true
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Host Manager
@@ -166,10 +168,14 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${PROJECT_DIR}
+EnvironmentFile=-${ENV_FILE}
+Environment=PYTHONUNBUFFERED=1
+# Перед стартом — добиваем «сирот» (старые процессы панели, tmux-клиенты),
+# если они вдруг ещё держат порт. Делает сервис самолечащимся.
+ExecStartPre=-/bin/bash ${PROJECT_DIR}/pre_start.sh
 ExecStart=${VENV_DIR}/bin/python3 ${PROJECT_DIR}/manager.py
 Restart=always
 RestartSec=5
-Environment=PYTHONUNBUFFERED=1
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=10
