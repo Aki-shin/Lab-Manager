@@ -49,7 +49,22 @@
       🕓 Обновление до <code>{{ pending.new_commit[:7] if pending.new_commit else '?' }}</code>
       применено и ожидает проверки watchdog. Если панель не поднимется,
       обновление будет автоматически откачено.
+      <span class="text-muted small ms-2">страница обновится автоматически…</span>
     </div>
+    <script>
+      // Пока показывается «pending», страница сама обновляется каждые 5 сек.
+      // Лимит ~1 минута, чтобы не зациклиться, если watchdog не отработал.
+      (function () {
+        const KEY = 'sysUpdReloads';
+        const n = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+        if (n < 12) {
+          sessionStorage.setItem(KEY, n + 1);
+          setTimeout(function () { location.reload(); }, 5000);
+        }
+      })();
+    </script>
+    {% else %}
+    <script>sessionStorage.removeItem('sysUpdReloads');</script>
     {% endif %}
 
     {# --- Текущая версия --- #}
