@@ -624,20 +624,68 @@ def git_clone_app(git_url, name):
         return False, f"Ошибка: {e}"
 
 
+def _parse_conflicting_untracked(err_text):
+    """
+    Извлекает имена файлов из сообщения git:
+        error: The following untracked working tree files would be
+               overwritten by merge:
+            file_a
+            file_b
+        Please move or remove them before you merge.
+    """
+    files = []
+    capturing = False
+    for line in (err_text or '').split('\n'):
+        low = line.lower().lstrip()
+        if 'untracked working tree files would be overwritten' in low:
+            capturing = True
+            continue
+        if not capturing:
+            continue
+        if (low.startswith(('please move', 'aborting', 'hint:', 'error:'))
+                or not line.strip()):
+            if low.startswith(('please move', 'aborting')):
+                break
+            continue
+        f = line.strip()
+        if f:
+            files.append(f)
+    return files
+
+
 def git_pull_app(name):
-    """git pull в существующем приложении. Возвращает (ok, message)."""
+    """git pull в существующем приложении. Возвращает (ok, message).
+
+    Если pull падает из-за неотслеживаемых файлов (типичная ситуация после
+    `git attach`, когда часть файлов осталась untracked), такие файлы
+    автоматически удаляются и pull повторяется."""
     target = os.path.join(Config.APPS_DIR, name)
     if not os.path.isdir(os.path.join(target, ".git")):
         return False, "Это не git-репозиторий"
 
-    try:
-        result = subprocess.run(
+    def _pull():
+        return subprocess.run(
             ["git", "-C", target, "pull", "--ff-only"],
             capture_output=True, text=True, timeout=120, env=_git_env()
         )
+
+    try:
+        result = _pull()
         if result.returncode != 0:
-            err = (result.stderr.strip() or result.stdout.strip())
-            return False, f"git pull failed: {err}"
+            err = (result.stderr or '') + (result.stdout or '')
+            if 'untracked working tree files would be overwritten' in err.lower():
+                # Удаляем конкретные файлы, мешающие pull, и пробуем ещё раз
+                for f in _parse_conflicting_untracked(err):
+                    path = os.path.join(target, f)
+                    try:
+                        if os.path.isfile(path):
+                            os.remove(path)
+                    except Exception:
+                        pass
+                result = _pull()
+            if result.returncode != 0:
+                err2 = (result.stderr.strip() or result.stdout.strip())
+                return False, f"git pull failed: {err2}"
         return True, result.stdout.strip() or "Обновлено"
     except subprocess.TimeoutExpired:
         return False, "Таймаут обновления (>120с)"
@@ -951,6 +999,9 @@ def attach_git_repo(name, git_url):
         if co.returncode != 0:
             shutil.rmtree(git_dir, ignore_errors=True)
             return False, f"git checkout failed: {co.stderr.strip()}"
+
+        # Убираем неотслеживаемые остатки — иначе они помешают git pull позже
+        _g(["clean", "-fd"])
 
         # Гарантируем upstream — без него git pull при обновлении не сработает
         _g(["branch", f"--set-upstream-to=origin/{branch}", branch])
