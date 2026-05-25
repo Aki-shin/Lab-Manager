@@ -994,14 +994,27 @@ def attach_git_repo(name, git_url):
             shutil.rmtree(git_dir, ignore_errors=True)
             return False, "Не удалось определить ветку репозитория"
 
-        # Приводим рабочее дерево к origin/<branch> (-f перезаписывает файлы)
+        # Перед checkout убираем только те файлы рабочего дерева, которые
+        # есть в репозитории. Локальные файлы (БД, логи, venv, что-либо ещё,
+        # чего нет в репо) — НЕ ТРОГАЕМ.
+        ls = _g(["ls-tree", "-r", "--name-only", f"origin/{branch}"])
+        if ls.returncode == 0:
+            for rel in ls.stdout.split('\n'):
+                rel = rel.strip()
+                if not rel:
+                    continue
+                p = os.path.join(app_path, rel)
+                if os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+        # Теперь checkout сможет чисто принести файлы репозитория
         co = _g(["checkout", "-f", "-B", branch, f"origin/{branch}"])
         if co.returncode != 0:
             shutil.rmtree(git_dir, ignore_errors=True)
             return False, f"git checkout failed: {co.stderr.strip()}"
-
-        # Убираем неотслеживаемые остатки — иначе они помешают git pull позже
-        _g(["clean", "-fd"])
 
         # Гарантируем upstream — без него git pull при обновлении не сработает
         _g(["branch", f"--set-upstream-to=origin/{branch}", branch])
