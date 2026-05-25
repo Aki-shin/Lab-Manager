@@ -1,6 +1,8 @@
 import os
 import re
+import json
 import ipaddress
+import subprocess
 import tempfile
 from urllib.parse import urlparse
 from flask import (
@@ -817,10 +819,66 @@ def system_restart():
 @bp.route('/system/update', methods=['POST'])
 @admin_required
 def system_update():
-    """git pull + pip install + отложенный перезапуск панели."""
-    ok, msg = self_update.do_update()
-    flash(msg, 'success' if ok else 'danger')
-    return redirect(url_for('main.system_page'))
+    """
+    Запускает обновление в **отдельном systemd-юните** (`updater.py`).
+    Юнит работает независимо от панели — сам её останавливает, обновляет,
+    запускает и проверяет, что она поднялась. Прогресс пишется в
+    data/.update_status.json и виден на странице прогресса.
+    """
+    from .config import BASE_DIR
+    script = os.path.join(BASE_DIR, 'updater.py')
+    venv_py = os.path.join(BASE_DIR, 'venv', 'bin', 'python3')
+
+    if not os.path.exists(script):
+        flash('updater.py не найден на сервере — обновите код через SSH '
+              '(git pull) и повторите.', 'danger')
+        return redirect(url_for('main.system_page'))
+
+    # Если апдейтер уже крутится — просто открыть страницу прогресса
+    try:
+        st = subprocess.run(
+            ['systemctl', 'is-active', 'host-manager-updater.service'],
+            capture_output=True, text=True, timeout=5
+        )
+        if st.stdout.strip() == 'active':
+            return redirect(url_for('main.system_update_progress'))
+    except Exception:
+        pass
+
+    try:
+        subprocess.run(
+            ['systemd-run', '--collect', '--unit=host-manager-updater',
+             venv_py, script],
+            capture_output=True, text=True, timeout=10, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        flash(f'Не удалось запустить апдейтер: {e.stderr or e}', 'danger')
+        return redirect(url_for('main.system_page'))
+    except Exception as e:
+        flash(f'Не удалось запустить апдейтер: {e}', 'danger')
+        return redirect(url_for('main.system_page'))
+
+    return redirect(url_for('main.system_update_progress'))
+
+
+@bp.route('/system/update-progress')
+@admin_required
+def system_update_progress():
+    """Страница, поллящая статус обновления."""
+    return render_template('system_update_progress.html')
+
+
+@bp.route('/system/update-status')
+@admin_required
+def system_update_status():
+    """JSON со статусом текущего обновления (читается с диска)."""
+    from .config import BASE_DIR
+    path = os.path.join(BASE_DIR, 'data', '.update_status.json')
+    try:
+        with open(path) as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({'phase': 'unknown', 'message': '', 'ok': None})
 
 
 @bp.route('/system/rollback', methods=['POST'])

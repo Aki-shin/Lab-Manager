@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Обновление панели — Host Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h3 class="mb-4"><i class="bi bi-arrow-down-circle me-1"></i>Обновление Host Manager</h3>
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span id="phaseLabel" class="fw-semibold">Подготовка…</span>
+          <span id="phaseTag" class="badge bg-secondary font-monospace">starting</span>
+        </div>
+        <div class="progress mb-3" style="height: 10px;">
+          <div id="bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+               style="width: 5%; transition: width .4s ease;"></div>
+        </div>
+        <div id="msg" class="text-muted small">Запуск апдейтера в отдельном процессе…</div>
+        <div id="connNote" class="text-warning small mt-2"></div>
+        <div class="text-muted small mt-3">
+          <i class="bi bi-info-circle me-1"></i>Обновление выполняется отдельным процессом —
+          даже если панель временно недоступна (перезапуск), эта страница продолжит ждать
+          результат. По завершении вы автоматически попадёте обратно на «Система».
+        </div>
+      </div>
+      <div class="card-footer bg-white d-none" id="actions">
+        <a href="{{ url_for('main.system_page') }}" class="btn btn-primary">
+          <i class="bi bi-arrow-left me-1"></i>Вернуться к «Система»
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PHASES = {
+    starting:    [10, 'Подготовка',                    'bg-info'],
+    pulling:     [25, 'git pull',                      'bg-info'],
+    installing:  [50, 'Установка зависимостей',        'bg-info'],
+    restarting:  [70, 'Перезапуск сервиса',            'bg-info'],
+    healthcheck: [85, 'Проверка работоспособности',    'bg-info'],
+    rollback:    [90, 'Автооткат',                     'bg-warning'],
+    done:        [100, 'Готово',                       'bg-success'],
+    failed:      [100, 'Ошибка',                       'bg-danger'],
+    unknown:     [5,  'Ожидание апдейтера…',           'bg-secondary'],
+};
+
+const bar         = document.getElementById('bar');
+const phaseLabel  = document.getElementById('phaseLabel');
+const phaseTag    = document.getElementById('phaseTag');
+const msg         = document.getElementById('msg');
+const connNote    = document.getElementById('connNote');
+const actions     = document.getElementById('actions');
+
+let panelDown = false;
+
+async function tick() {
+    try {
+        const r = await fetch('{{ url_for("main.system_update_status") }}',
+                              { cache: 'no-store' });
+        if (panelDown) {
+            connNote.textContent = '';
+            panelDown = false;
+        }
+        const d = await r.json();
+        const [pct, label, cls] = PHASES[d.phase] || PHASES.unknown;
+        phaseLabel.textContent = label;
+        phaseTag.textContent = d.phase || 'unknown';
+        msg.textContent = d.message || '';
+        bar.style.width = pct + '%';
+        bar.className = 'progress-bar progress-bar-striped progress-bar-animated ' + cls;
+
+        if (d.phase === 'done') {
+            bar.classList.remove('progress-bar-animated');
+            msg.textContent = (d.message || 'Готово') + ' — открываю страницу системы…';
+            setTimeout(() => { location.href = '{{ url_for("main.system_page") }}'; }, 1500);
+            return;
+        }
+        if (d.phase === 'failed') {
+            bar.classList.remove('progress-bar-animated');
+            actions.classList.remove('d-none');
+            return;
+        }
+    } catch (e) {
+        // Панель перезапускается — это нормально, продолжаем поллить
+        panelDown = true;
+        connNote.textContent = '⚠ панель временно недоступна (перезапуск)…';
+    }
+    setTimeout(tick, 1500);
+}
+tick();
+</script>
+{% endblock %}
