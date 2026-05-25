@@ -7,10 +7,42 @@ import zipfile
 import tarfile
 import subprocess
 import signal
+import threading
+import datetime
 import urllib.request
 import urllib.error
 import psutil
 from .config import Config
+
+
+# --- Прогресс обновления приложения (для прогресс-страницы) ---
+_app_update_lock = threading.Lock()
+_app_update_status = {}  # name -> {phase, message, ok, time, ...}
+
+
+def _app_status_set(name, phase, message="", ok=None, **extra):
+    with _app_update_lock:
+        _app_update_status[name] = {
+            "phase": phase,
+            "message": message,
+            "ok": ok,
+            "time": datetime.datetime.now().isoformat(timespec="seconds"),
+            **extra,
+        }
+
+
+def get_app_update_status(name):
+    """Текущий статус обновления приложения (или None)."""
+    with _app_update_lock:
+        s = _app_update_status.get(name)
+        return dict(s) if s else None
+
+
+def is_app_update_running(name):
+    s = get_app_update_status(name)
+    if not s:
+        return False
+    return s.get("phase") not in ("done", "failed", "idle")
 
 
 def _service_name(app_name):
@@ -779,35 +811,53 @@ def update_app_with_rollback(name):
     Возвращает (ok: bool, message: str, report: dict|None).
     report заполняется только при сбое и содержит детали для UI.
     """
+    _app_status_set(name, "starting", "Подготовка к обновлению")
     app_path = os.path.join(Config.APPS_DIR, name)
     if not os.path.isdir(os.path.join(app_path, ".git")):
+        _app_status_set(name, "failed", "Это не git-репозиторий", ok=False)
         return False, "Это не git-репозиторий", None
 
     # 1. Точка отката
     old_commit = _git_app_head(app_path)
     if not old_commit:
+        _app_status_set(name, "failed",
+                        "Не удалось определить текущий commit приложения", ok=False)
         return False, "Не удалось определить текущий commit приложения", None
 
     # 2. git pull
+    _app_status_set(name, "pulling", "git pull --ff-only")
     pull_ok, pull_msg = git_pull_app(name)
     if not pull_ok:
+        _app_status_set(name, "failed", f"git pull: {pull_msg}", ok=False)
         return False, f"Обновление не выполнено: {pull_msg}", None
 
     new_commit = _git_app_head(app_path)
     if new_commit == old_commit:
+        _app_status_set(name, "done", "Обновлений нет — установлена последняя версия",
+                        ok=True, commit=new_commit[:7])
         return True, "Обновлений нет — установлена последняя версия.", None
 
     # 3. venv и зависимости
+    _app_status_set(name, "installing", "Установка зависимостей (venv + pip)",
+                    new_commit=new_commit[:7])
     setup_ok, setup_msg = setup_app_environment(name)
 
     # 4. Перезапуск сервиса (если он есть)
     if not os.path.exists(_service_path(name)):
+        _app_status_set(name, "done",
+                        f"Код обновлён до {new_commit[:7]} (сервис не создан)",
+                        ok=True, commit=new_commit[:7])
         return True, (f"Код обновлён до {new_commit[:7]} ({setup_msg}). "
                       f"Сервис не создан — проверка работоспособности пропущена."), None
 
+    _app_status_set(name, "restarting", "Перезапуск сервиса",
+                    new_commit=new_commit[:7])
     control_service(name, "restart")
 
     # 5. Проверка работоспособности
+    _app_status_set(name, "healthcheck",
+                    "Проверка работоспособности (до 20 секунд)",
+                    new_commit=new_commit[:7])
     healthy, reason = _wait_app_healthy(name)
     if healthy:
         # Сбрасываем кэш «доступно обновление» для этого приложения,
@@ -817,10 +867,16 @@ def update_app_with_rollback(name):
             update_checker.mark_app_up_to_date(name, new_commit)
         except Exception:
             pass
+        _app_status_set(name, "done",
+                        f"Обновлено до {new_commit[:7]} — приложение работает",
+                        ok=True, commit=new_commit[:7])
         return True, (f"Приложение обновлено до {new_commit[:7]} "
                       f"и работает штатно. {setup_msg}."), None
 
     # 6. Автооткат
+    _app_status_set(name, "rollback",
+                    f"Откат к {old_commit[:7]} ({reason})",
+                    new_commit=new_commit[:7], reason=reason)
     crash_logs = get_app_logs(name, lines=120)
     rb_ok = _git_app_reset(app_path, old_commit)
     setup_app_environment(name)
@@ -839,6 +895,11 @@ def update_app_with_rollback(name):
     else:
         msg = (f"Обновление до {new_commit[:7]} сломало приложение "
                f"({reason}), и автооткат не удался — требуется ручное вмешательство.")
+    _app_status_set(name, "failed", msg, ok=False,
+                    failed_commit=new_commit[:7],
+                    rolled_back_to=(old_commit[:7] if rb_ok else None),
+                    reason=reason,
+                    logs=crash_logs[-4000:])
     return False, msg, report
 
 

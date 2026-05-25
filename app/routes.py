@@ -4,6 +4,7 @@ import json
 import ipaddress
 import subprocess
 import tempfile
+import threading
 from urllib.parse import urlparse
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
@@ -21,6 +22,7 @@ from .services import (
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
     setup_app_environment, get_assigned_port, update_app_with_rollback,
     attach_git_repo, check_app_updates, get_app_git_info,
+    get_app_update_status, is_app_update_running,
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
@@ -502,13 +504,33 @@ def git_attach(name):
 @bp.route('/git/pull/<name>', methods=['POST'])
 @admin_required
 def git_pull(name):
-    """git pull приложения с пересборкой venv и автооткатом при поломке."""
+    """Запускает обновление приложения в фоновом потоке и ведёт на прогресс-страницу."""
     safe_name = _safe_name(name)
-    ok, msg, report = update_app_with_rollback(safe_name)
-    return render_template(
-        'app_update_result.html',
-        name=safe_name, ok=ok, message=msg, report=report
-    )
+    if not is_app_update_running(safe_name):
+        threading.Thread(
+            target=update_app_with_rollback,
+            args=(safe_name,),
+            name=f"app-update-{safe_name}",
+            daemon=True,
+        ).start()
+    return redirect(url_for('main.app_update_progress', name=safe_name))
+
+
+@bp.route('/app/<name>/update/progress')
+@admin_required
+def app_update_progress(name):
+    """Страница с живым прогрессом обновления приложения."""
+    safe_name = _safe_name(name)
+    return render_template('app_update_progress.html', name=safe_name)
+
+
+@bp.route('/app/<name>/update/status')
+@admin_required
+def app_update_status(name):
+    """JSON-статус обновления конкретного приложения."""
+    safe_name = _safe_name(name)
+    s = get_app_update_status(safe_name)
+    return jsonify(s or {'phase': 'idle', 'message': '', 'ok': None})
 
 
 @bp.route('/setup/<name>', methods=['POST'])

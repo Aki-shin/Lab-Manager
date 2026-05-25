@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Обновление {{ name }} — Host Manager{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Главная</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.app_detail', name=name) }}">{{ name }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Обновление</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <h3 class="mb-4"><i class="bi bi-arrow-down-circle me-1"></i>Обновление приложения: {{ name }}</h3>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span id="phaseLabel" class="fw-semibold">Подготовка…</span>
+          <span id="phaseTag" class="badge bg-secondary font-monospace">starting</span>
+        </div>
+        <div class="progress mb-3" style="height: 10px;">
+          <div id="bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+               style="width: 5%; transition: width .4s ease;"></div>
+        </div>
+        <div id="msg" class="text-muted small">Запускаю апдейтер…</div>
+      </div>
+
+      {# Блок результата (показывается при done/failed) #}
+      <div id="resultBox" class="card-footer bg-white d-none">
+        <div id="resultMsg" class="alert mb-3"></div>
+
+        <table id="resultTable" class="table table-sm mb-3 d-none">
+          <tr><th style="width: 200px;">Сбойный коммит</th><td id="rFailed"></td></tr>
+          <tr><th>Откат выполнен к</th><td id="rRolled"></td></tr>
+          <tr><th>Причина сбоя</th><td id="rReason"></td></tr>
+        </table>
+
+        <div id="logsBlock" class="d-none">
+          <p class="mb-1"><strong>Журнал приложения на момент сбоя:</strong></p>
+          <pre class="terminal p-3 mb-3" id="rLogs"></pre>
+        </div>
+
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i>К приложению
+          </a>
+          <form id="retryForm" action="{{ url_for('main.git_pull', name=name) }}" method="post" class="d-none">
+            <button type="submit" class="btn btn-outline-primary">
+              <i class="bi bi-arrow-clockwise me-1"></i>Повторить
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PHASES = {
+    starting:    [10,  'Подготовка',                  'bg-info'],
+    pulling:     [25,  'git pull',                    'bg-info'],
+    installing:  [50,  'Установка зависимостей',      'bg-info'],
+    restarting:  [70,  'Перезапуск сервиса',          'bg-info'],
+    healthcheck: [85,  'Проверка работоспособности',  'bg-info'],
+    rollback:    [90,  'Автооткат',                   'bg-warning'],
+    done:        [100, 'Готово',                      'bg-success'],
+    failed:      [100, 'Ошибка',                      'bg-danger'],
+    idle:        [0,   'Ожидание…',                   'bg-secondary'],
+};
+
+const bar         = document.getElementById('bar');
+const phaseLabel  = document.getElementById('phaseLabel');
+const phaseTag    = document.getElementById('phaseTag');
+const msg         = document.getElementById('msg');
+const resultBox   = document.getElementById('resultBox');
+const resultMsg   = document.getElementById('resultMsg');
+const resultTable = document.getElementById('resultTable');
+const logsBlock   = document.getElementById('logsBlock');
+const retryForm   = document.getElementById('retryForm');
+
+function finalize(d, ok) {
+    bar.classList.remove('progress-bar-animated');
+    resultBox.classList.remove('d-none');
+    resultMsg.classList.add(ok ? 'alert-success' : 'alert-danger');
+    resultMsg.textContent = d.message || (ok ? 'Готово' : 'Ошибка');
+
+    if (d.failed_commit || d.rolled_back_to || d.reason) {
+        resultTable.classList.remove('d-none');
+        document.getElementById('rFailed').textContent = d.failed_commit || '—';
+        document.getElementById('rRolled').textContent = d.rolled_back_to || 'не удалось';
+        document.getElementById('rReason').textContent = d.reason || '—';
+    }
+    if (d.logs) {
+        logsBlock.classList.remove('d-none');
+        document.getElementById('rLogs').textContent = d.logs;
+    }
+    if (!ok) {
+        retryForm.classList.remove('d-none');
+    }
+    if (ok) {
+        // На успехе через секунду уходим на страницу приложения
+        setTimeout(() => {
+            location.href = '{{ url_for("main.app_detail", name=name) }}';
+        }, 1200);
+    }
+}
+
+async function tick() {
+    try {
+        const r = await fetch('{{ url_for("main.app_update_status", name=name) }}',
+                              { cache: 'no-store' });
+        const d = await r.json();
+        const [pct, label, cls] = PHASES[d.phase] || PHASES.idle;
+        phaseLabel.textContent = label;
+        phaseTag.textContent = d.phase || 'idle';
+        msg.textContent = d.message || '';
+        bar.style.width = pct + '%';
+        bar.className = 'progress-bar progress-bar-striped progress-bar-animated ' + cls;
+
+        if (d.phase === 'done')   { finalize(d, true);  return; }
+        if (d.phase === 'failed') { finalize(d, false); return; }
+    } catch (e) {
+        msg.textContent = 'не удалось получить статус…';
+    }
+    setTimeout(tick, 1200);
+}
+tick();
+</script>
+{% endblock %}
