@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Сеть — Host Manager{% endblock %}
+
+{% block content %}
+<h3 class="mb-3"><i class="bi bi-activity me-1"></i>Сетевые интерфейсы</h3>
+<p class="text-muted small">
+    Трафик по каждому интерфейсу хоста с момента старта системы.
+    Скорость считается по приросту между опросами (каждые 2 секунды).
+</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Интерфейс</th>
+                    <th>Адрес</th>
+                    <th class="text-end">↓ Принято</th>
+                    <th class="text-end">↑ Отправлено</th>
+                    <th class="text-end">Скорость ↓ / ↑</th>
+                    <th class="text-end">Пакетов ↓ / ↑</th>
+                    <th class="text-end" title="Ошибки + потери">Ошибки</th>
+                </tr>
+            </thead>
+            <tbody id="ifaceBody">
+                {% for name, c in interfaces.items() %}
+                <tr data-iface="{{ name }}">
+                    <td class="fw-semibold font-monospace">{{ name }}</td>
+                    <td class="font-monospace small text-muted">
+                        {% if addresses.get(name) %}{{ addresses[name]|join(', ') }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-end font-monospace" data-cell="recv">—</td>
+                    <td class="text-end font-monospace" data-cell="sent">—</td>
+                    <td class="text-end font-monospace small" data-cell="rate">—</td>
+                    <td class="text-end font-monospace small text-muted" data-cell="packets">—</td>
+                    <td class="text-end font-monospace small" data-cell="errors">—</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function fmtBytes(n) {
+    if (n === null || n === undefined) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+    if (n < 1024*1024*1024) return (n/(1024*1024)).toFixed(2) + ' MB';
+    if (n < 1024*1024*1024*1024) return (n/(1024*1024*1024)).toFixed(2) + ' GB';
+    return (n/(1024*1024*1024*1024)).toFixed(2) + ' TB';
+}
+function fmtRate(bps) {
+    if (bps === null || bps === undefined) return '—';
+    if (bps < 1024) return Math.round(bps) + ' B/s';
+    if (bps < 1024*1024) return (bps/1024).toFixed(1) + ' KB/s';
+    return (bps/(1024*1024)).toFixed(2) + ' MB/s';
+}
+
+let prev = null;
+async function tick() {
+    try {
+        const r = await fetch('{{ url_for("main.api_system_network") }}', {cache: 'no-store'});
+        const d = await r.json();
+        const now = Date.now();
+        const tbody = document.getElementById('ifaceBody');
+        const knownRows = new Set();
+        Object.entries(d.interfaces || {}).forEach(([name, c]) => {
+            let row = tbody.querySelector(`tr[data-iface="${CSS.escape(name)}"]`);
+            if (!row) {
+                row = document.createElement('tr');
+                row.setAttribute('data-iface', name);
+                const addr = (d.addresses && d.addresses[name]) ? d.addresses[name].join(', ') : '—';
+                row.innerHTML = `
+                    <td class="fw-semibold font-monospace">${name}</td>
+                    <td class="font-monospace small text-muted">${addr}</td>
+                    <td class="text-end font-monospace" data-cell="recv">—</td>
+                    <td class="text-end font-monospace" data-cell="sent">—</td>
+                    <td class="text-end font-monospace small" data-cell="rate">—</td>
+                    <td class="text-end font-monospace small text-muted" data-cell="packets">—</td>
+                    <td class="text-end font-monospace small" data-cell="errors">—</td>`;
+                tbody.appendChild(row);
+            }
+            knownRows.add(name);
+            row.querySelector('[data-cell="recv"]').textContent = fmtBytes(c.bytes_recv);
+            row.querySelector('[data-cell="sent"]').textContent = fmtBytes(c.bytes_sent);
+            row.querySelector('[data-cell="packets"]').textContent =
+                c.packets_recv.toLocaleString() + ' / ' + c.packets_sent.toLocaleString();
+            const errs = (c.errin || 0) + (c.errout || 0) + (c.dropin || 0) + (c.dropout || 0);
+            const errCell = row.querySelector('[data-cell="errors"]');
+            errCell.textContent = errs ? errs.toLocaleString() : '0';
+            errCell.classList.toggle('text-danger', errs > 0);
+            errCell.classList.toggle('text-muted', errs === 0);
+            // Rate
+            if (prev && prev.ifaces[name] && now > prev.t) {
+                const dt = (now - prev.t) / 1000;
+                const dIn  = Math.max(0, c.bytes_recv - prev.ifaces[name].bytes_recv) / dt;
+                const dOut = Math.max(0, c.bytes_sent - prev.ifaces[name].bytes_sent) / dt;
+                row.querySelector('[data-cell="rate"]').textContent =
+                    '↓' + fmtRate(dIn) + ' · ↑' + fmtRate(dOut);
+            }
+        });
+        // Удаляем строки исчезнувших интерфейсов
+        [...tbody.querySelectorAll('tr[data-iface]')].forEach(row => {
+            if (!knownRows.has(row.getAttribute('data-iface'))) row.remove();
+        });
+        prev = { t: now, ifaces: d.interfaces };
+    } catch (e) {}
+}
+tick();
+setInterval(tick, 2000);
+</script>
+{% endblock %}

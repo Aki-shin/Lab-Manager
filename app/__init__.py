@@ -30,6 +30,14 @@ def create_app():
     def inject_user():
         return {'current_user': current_user()}
 
+    # Однократная миграция: включаем IPAccounting=yes у существующих
+    # labapp-*.service, у которых его ещё нет (для учёта трафика приложений)
+    try:
+        from .services import migrate_apps_enable_ip_accounting
+        migrate_apps_enable_ip_accounting()
+    except Exception:
+        pass
+
     # Запускаем TCP-форвардеры для приложений с настроенным внешним портом
     from . import port_forwarder
     port_forwarder.init(app)

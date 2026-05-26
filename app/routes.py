@@ -19,6 +19,7 @@ from .services import (
     create_app_service, update_app_service, control_service, delete_app_service,
     run_diagnostic_test, parse_service_file,
     get_system_stats, get_local_ipv4s, stream_app_logs,
+    get_network_traffic, get_network_addresses, get_app_traffic_systemd,
     git_clone_app, git_pull_app, is_safe_app_name, extract_archive,
     setup_app_environment, get_assigned_port, update_app_with_rollback,
     attach_git_repo, check_app_updates, get_app_git_info,
@@ -672,10 +673,40 @@ def api_system_metrics():
 @bp.route('/api/app/<name>/traffic')
 @admin_required
 def api_app_traffic(name):
-    """JSON со статистикой трафика форвардера приложения."""
+    """
+    JSON со статистикой трафика приложения. Включает:
+      - forwarder: байты через панель-форвардер (только проксированное)
+      - systemd: полный IP-трафик процесса приложения (если IPAccounting=yes
+        и сервис был запущен после включения учёта)
+    """
     safe_name = _safe_name(name)
-    stats = port_forwarder.get_stats(safe_name)
-    return jsonify(stats or {})
+    forwarder = port_forwarder.get_stats(safe_name)
+    systemd = get_app_traffic_systemd(safe_name)
+    return jsonify({
+        'forwarder': forwarder,
+        'systemd': systemd,
+    })
+
+
+@bp.route('/network')
+@admin_required
+def network_page():
+    """Страница с трафиком по всем сетевым интерфейсам хоста."""
+    return render_template(
+        'network.html',
+        interfaces=get_network_traffic(),
+        addresses=get_network_addresses(),
+    )
+
+
+@bp.route('/api/system/network')
+@admin_required
+def api_system_network():
+    """JSON со счётчиками трафика по каждому интерфейсу."""
+    return jsonify({
+        'interfaces': get_network_traffic(),
+        'addresses': get_network_addresses(),
+    })
 
 
 # --- Управление пользователями (admin only) ---

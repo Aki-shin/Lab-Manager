@@ -108,19 +108,22 @@
                     </div>
                     {% endif %}
 
-                    {% if external_port %}
-                    <div class="card bg-light border-0 mb-3">
+                    {% if app.has_service %}
+                    <div class="card bg-light border-0 mb-3" id="netCard">
                         <div class="card-body py-2">
-                            <div class="text-muted small mb-1">
-                                <i class="bi bi-activity me-1"></i>Сетевой трафик (порт {{ external_port }})
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="text-muted small">
+                                    <i class="bi bi-activity me-1"></i>Сетевой трафик
+                                </span>
+                                <span id="net-source" class="text-muted" style="font-size: 0.7em;"></span>
                             </div>
                             <div class="row text-center g-2 small">
                                 <div class="col-3">
-                                    <div class="text-muted" style="font-size: 0.7em;">↓ Входящий</div>
+                                    <div class="text-muted" style="font-size: 0.7em;">↓ Принято</div>
                                     <div class="fw-bold" id="net-in">—</div>
                                 </div>
                                 <div class="col-3">
-                                    <div class="text-muted" style="font-size: 0.7em;">↑ Исходящий</div>
+                                    <div class="text-muted" style="font-size: 0.7em;">↑ Отправлено</div>
                                     <div class="fw-bold" id="net-out">—</div>
                                 </div>
                                 <div class="col-3">
@@ -344,15 +347,17 @@ setInterval(async () => {
 {% endif %}
 {% endif %}
 
-{% if external_port %}
-// --- Авто-обновление трафика форвардера ---
+{% if app.has_service %}
+// --- Авто-обновление трафика приложения ---
 function fmtBytes(n) {
+    if (n === null || n === undefined) return '—';
     if (n < 1024) return n + ' B';
     if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
     if (n < 1024*1024*1024) return (n/(1024*1024)).toFixed(2) + ' MB';
     return (n/(1024*1024*1024)).toFixed(2) + ' GB';
 }
 function fmtRate(bps) {
+    if (bps === null || bps === undefined) return '—';
     if (bps < 1024) return Math.round(bps) + ' B/s';
     if (bps < 1024*1024) return (bps/1024).toFixed(1) + ' KB/s';
     return (bps/(1024*1024)).toFixed(2) + ' MB/s';
@@ -363,23 +368,39 @@ async function pollTraffic() {
         const r = await fetch('{{ url_for("main.api_app_traffic", name=app.name) }}',
                               { cache: 'no-store' });
         const d = await r.json();
-        if (d.bytes_in === undefined) {
-            document.getElementById('net-rate').textContent = 'форвардер не запущен';
-            return;
+        // Источник байт: systemd (полный трафик процесса) приоритетнее,
+        // иначе fallback на счётчики панель-форвардера.
+        let bIn = null, bOut = null, src = '';
+        if (d.systemd) {
+            bIn = d.systemd.ingress_bytes;
+            bOut = d.systemd.egress_bytes;
+            src = 'полный трафик процесса';
+        } else if (d.forwarder) {
+            bIn = d.forwarder.bytes_in;
+            bOut = d.forwarder.bytes_out;
+            src = 'только через панель-форвардер · перезапустите сервис для полного учёта';
+        } else {
+            src = 'учёт ещё не активен — перезапустите сервис';
         }
-        document.getElementById('net-in').textContent  = fmtBytes(d.bytes_in);
-        document.getElementById('net-out').textContent = fmtBytes(d.bytes_out);
-        document.getElementById('net-active').textContent = d.active_conns;
-        document.getElementById('net-total').textContent  = d.total_conns;
+        document.getElementById('net-in').textContent  = fmtBytes(bIn);
+        document.getElementById('net-out').textContent = fmtBytes(bOut);
+        document.getElementById('net-source').textContent = src;
+        if (d.forwarder) {
+            document.getElementById('net-active').textContent = d.forwarder.active_conns;
+            document.getElementById('net-total').textContent  = d.forwarder.total_conns;
+        } else {
+            document.getElementById('net-active').textContent = '—';
+            document.getElementById('net-total').textContent  = '—';
+        }
         const now = Date.now();
-        if (_prevTraffic && now > _prevTraffic.t) {
+        if (bIn !== null && _prevTraffic && now > _prevTraffic.t) {
             const dt = (now - _prevTraffic.t) / 1000;
-            const dIn  = Math.max(0, d.bytes_in  - _prevTraffic.in)  / dt;
-            const dOut = Math.max(0, d.bytes_out - _prevTraffic.out) / dt;
+            const dIn  = Math.max(0, bIn  - _prevTraffic.in)  / dt;
+            const dOut = Math.max(0, bOut - _prevTraffic.out) / dt;
             document.getElementById('net-rate').textContent =
                 '↓' + fmtRate(dIn) + ' · ↑' + fmtRate(dOut);
         }
-        _prevTraffic = { in: d.bytes_in, out: d.bytes_out, t: now };
+        if (bIn !== null) _prevTraffic = { in: bIn, out: bOut, t: now };
     } catch (e) {}
 }
 pollTraffic();

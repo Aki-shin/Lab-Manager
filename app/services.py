@@ -190,6 +190,120 @@ def get_app_status(name, with_metrics=False):
     }
 
 
+def get_network_traffic():
+    """Счётчики трафика по каждому сетевому интерфейсу хоста (psutil)."""
+    out = {}
+    try:
+        per = psutil.net_io_counters(pernic=True)
+    except Exception:
+        return out
+    for iface, c in per.items():
+        out[iface] = {
+            "bytes_recv": c.bytes_recv,
+            "bytes_sent": c.bytes_sent,
+            "packets_recv": c.packets_recv,
+            "packets_sent": c.packets_sent,
+            "errin": c.errin,
+            "errout": c.errout,
+            "dropin": c.dropin,
+            "dropout": c.dropout,
+        }
+    return out
+
+
+def get_network_addresses():
+    """Адреса (IPv4) по каждому интерфейсу — для отображения рядом с трафиком."""
+    out = {}
+    try:
+        for iface, info in psutil.net_if_addrs().items():
+            ips = [a.address for a in info if a.family == socket.AF_INET]
+            if ips:
+                out[iface] = ips
+    except Exception:
+        pass
+    return out
+
+
+def get_app_traffic_systemd(name):
+    """
+    Полный IP-трафик приложения по данным systemd IPAccounting.
+    Счётчик ведёт ядро (BPF на cgroup); считается ВСЁ — и проксированное
+    через панель-форвардер, и любой исходящий трафик из приложения
+    (API-вызовы, БД, DNS и т.п.).
+
+    Возвращает dict со значениями или None, если учёт не включён / сервис
+    не запущен. Учёт включается при создании/редактировании сервиса
+    (IPAccounting=yes в unit-файле) и активен с момента старта сервиса.
+    """
+    svc = _service_name(name)
+    out_raw = run_systemctl([
+        "show", svc,
+        "--property=IPIngressBytes,IPEgressBytes,"
+        "IPIngressPackets,IPEgressPackets"
+    ])
+    data = {}
+    for line in (out_raw or "").split("\n"):
+        if "=" in line:
+            k, v = line.split("=", 1)
+            data[k] = v.strip()
+
+    def _num(k):
+        v = data.get(k, "")
+        if not v or v.startswith("[not"):
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    ingress = _num("IPIngressBytes")
+    egress = _num("IPEgressBytes")
+    if ingress is None and egress is None:
+        return None  # учёт не включён или сервис не запускался после включения
+    return {
+        "ingress_bytes": ingress or 0,
+        "egress_bytes": egress or 0,
+        "ingress_packets": _num("IPIngressPackets") or 0,
+        "egress_packets": _num("IPEgressPackets") or 0,
+    }
+
+
+def migrate_apps_enable_ip_accounting():
+    """
+    Добавляет `IPAccounting=yes` во все существующие labapp-*.service,
+    у которых его ещё нет. Вызывается при старте панели — старые приложения
+    после ближайшего перезапуска начинают давать показания по IP-трафику.
+    """
+    if not os.path.isdir(Config.SYSTEMD_DIR):
+        return []
+    changed = []
+    pat = re.compile(r"^\[Service\]\s*$", re.MULTILINE)
+    for fn in os.listdir(Config.SYSTEMD_DIR):
+        if not (fn.startswith(Config.SERVICE_PREFIX) and fn.endswith(".service")):
+            continue
+        path = os.path.join(Config.SYSTEMD_DIR, fn)
+        try:
+            with open(path, "r") as f:
+                content = f.read()
+            if re.search(r"^\s*IPAccounting\s*=", content, re.MULTILINE):
+                continue
+            new = pat.sub("[Service]\nIPAccounting=yes", content, count=1)
+            if new == content:
+                continue
+            with open(path, "w") as f:
+                f.write(new)
+            changed.append(fn)
+        except Exception:
+            pass
+    if changed:
+        try:
+            subprocess.run(["systemctl", "daemon-reload"],
+                           capture_output=True, text=True, timeout=10)
+        except Exception:
+            pass
+    return changed
+
+
 def get_local_ipv4s():
     """IPv4-адреса локальных интерфейсов сервера (кроме loopback)."""
     ips = []
@@ -266,6 +380,7 @@ After=network.target
 
 [Service]
 Type=simple
+IPAccounting=yes
 WorkingDirectory={app_path}
 {env_block}
 ExecStart={entry_cmd}
