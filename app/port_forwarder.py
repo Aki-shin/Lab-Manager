@@ -15,6 +15,7 @@ TCP-форвардер с авторизацией для «прозрачног
       панели — labmgr_session — видна браузером на всех портах одного хоста по RFC 6265).
 """
 import os
+import time
 import socket
 import threading
 import select
@@ -79,6 +80,13 @@ class PortForwarder:
         self._server_sock = None
         self._thread = None
         self._stop = threading.Event()
+        # Счётчики трафика
+        self._stats_lock = threading.Lock()
+        self.bytes_in = 0    # клиент → upstream
+        self.bytes_out = 0   # upstream → клиент
+        self.total_conns = 0
+        self.active_conns = 0
+        self.started_at = None
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -93,6 +101,8 @@ class PortForwarder:
 
         self._server_sock = sock
         self._stop.clear()
+        if self.started_at is None:
+            self.started_at = time.time()
         self._thread = threading.Thread(
             target=self._accept_loop,
             name=f"fwd-{self.name}-{self.external_port}",
@@ -125,6 +135,9 @@ class PortForwarder:
             except OSError:
                 break
             client.settimeout(None)
+            with self._stats_lock:
+                self.total_conns += 1
+                self.active_conns += 1
             threading.Thread(
                 target=self._handle_connection,
                 args=(client, addr),
@@ -208,6 +221,9 @@ class PortForwarder:
                     s.close()
                 except Exception:
                     pass
+            with self._stats_lock:
+                if self.active_conns > 0:
+                    self.active_conns -= 1
 
     # -------------------------------------------------------- authorization
 
@@ -324,6 +340,13 @@ class PortForwarder:
                     return
                 if not data:
                     return
+                # Считаем трафик: a — клиент, b — upstream
+                n = len(data)
+                with self._stats_lock:
+                    if s is a:
+                        self.bytes_in += n
+                    else:
+                        self.bytes_out += n
                 other = b if s is a else a
                 try:
                     other.sendall(data)
@@ -379,6 +402,25 @@ def stop_forwarder(name):
         fwd = _forwarders.pop(name, None)
         if fwd:
             fwd.stop()
+
+
+def get_stats(name):
+    """Статистика трафика для форвардера приложения. None если не запущен."""
+    fwd = _forwarders.get(name)
+    if not fwd:
+        return None
+    with fwd._stats_lock:
+        return {
+            "name": fwd.name,
+            "external_port": fwd.external_port,
+            "bytes_in": fwd.bytes_in,
+            "bytes_out": fwd.bytes_out,
+            "total_conns": fwd.total_conns,
+            "active_conns": fwd.active_conns,
+            "started_at": fwd.started_at,
+            "uptime_sec": (int(time.time() - fwd.started_at)
+                           if fwd.started_at else 0),
+        }
 
 
 def rebind_all():

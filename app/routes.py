@@ -669,6 +669,15 @@ def api_system_metrics():
     return jsonify(get_system_stats() or {})
 
 
+@bp.route('/api/app/<name>/traffic')
+@admin_required
+def api_app_traffic(name):
+    """JSON со статистикой трафика форвардера приложения."""
+    safe_name = _safe_name(name)
+    stats = port_forwarder.get_stats(safe_name)
+    return jsonify(stats or {})
+
+
 # --- Управление пользователями (admin only) ---
 
 USERNAME_RE = re.compile(r'^[a-zA-Z0-9_.-]{3,32}$')
