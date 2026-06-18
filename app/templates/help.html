@@ -218,6 +218,33 @@
 user = request.headers.get(<span class="str">"X-Remote-User"</span>, <span class="str">"anonymous"</span>)
 name = request.headers.get(<span class="str">"X-Remote-Name"</span>, <span class="str">""</span>)</pre>
 
+                    <div class="alert alert-warning small mt-2 mb-2">
+                        <b>⚠ Кодировка заголовков — частая причина «кракозябр».</b><br>
+                        Host Manager отправляет значения заголовков в байтах <b>UTF-8</b>.
+                        Но по HTTP-спецификации (RFC 7230) заголовки формально кодируются
+                        в <b>ISO-8859-1</b> (Latin-1), и многие фреймворки (Flask/Werkzeug,
+                        Express, Spring и др.) по умолчанию декодируют байты именно как Latin-1.
+                        В результате при кириллице в ФИО на стороне приложения вместо
+                        «<code>Алексей</code>» вы увидите «<code>Ð\x90Ð»ÐµÐºÑÐµÐ¹</code>».
+                        <br><br>
+                        Пересоберите значение из исходных байт:
+                    </div>
+<pre class="code-block"><span class="comment"># Flask / Werkzeug: значение пришло декодированным как Latin-1 —</span>
+<span class="comment"># возвращаем байты и декодируем как UTF-8</span>
+raw = request.headers.get(<span class="str">"X-Remote-Name"</span>, <span class="str">""</span>)
+name = raw.encode(<span class="str">"latin-1"</span>).decode(<span class="str">"utf-8"</span>)
+<span class="comment"># name == "Алексей"</span>
+
+<span class="comment"># Node.js / Express: req.headers даёт уже строку,</span>
+<span class="comment"># но Node декодирует заголовки как Latin-1 — тот же трюк:</span>
+<span class="kw">const</span> raw = req.headers[<span class="str">"x-remote-name"</span>] || <span class="str">""</span>;
+<span class="kw">const</span> name = Buffer.from(raw, <span class="str">"latin1"</span>).toString(<span class="str">"utf8"</span>);</pre>
+                    <p class="small text-muted mb-0">
+                        Логин (<code>X-Remote-User</code>) обычно ASCII — там перекодировка не нужна.
+                        Перекодировка актуальна для <code>X-Remote-Name</code> и любых других
+                        заголовков с не-ASCII символами.
+                    </p>
+
                     <h6 class="fw-bold mt-3">Настройка:</h6>
                     <p class="mb-0">
                         Страница приложения &rarr; карточка &laquo;Внешний порт&raquo; &rarr;
