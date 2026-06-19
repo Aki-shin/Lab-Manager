@@ -24,6 +24,7 @@ from .services import (
     setup_app_environment, get_assigned_port, update_app_with_rollback,
     attach_git_repo, check_app_updates, get_app_git_info,
     get_app_update_status, is_app_update_running,
+    update_app_from_archive,
     RESERVED_ENV_KEYS
 )
 from . import port_forwarder
@@ -514,6 +515,44 @@ def git_pull(name):
             name=f"app-update-{safe_name}",
             daemon=True,
         ).start()
+    return redirect(url_for('main.app_update_progress', name=safe_name))
+
+
+@bp.route('/app/<name>/update/from-archive', methods=['POST'])
+@admin_required
+def app_update_from_archive(name):
+    """Обновление приложения из загруженного архива (с автооткатом)."""
+    safe_name = _safe_name(name)
+    if is_app_update_running(safe_name):
+        return redirect(url_for('main.app_update_progress', name=safe_name))
+
+    file = request.files.get('archive')
+    if not file or not file.filename:
+        flash('Файл архива не выбран', 'danger')
+        return redirect(url_for('main.app_update_page', name=safe_name))
+    fname = file.filename.lower()
+    if not fname.endswith(ALLOWED_ARCHIVE_EXT):
+        flash('Поддерживаются только .zip, .tar.gz, .tgz, .tar', 'danger')
+        return redirect(url_for('main.app_update_page', name=safe_name))
+
+    suffix = '.tar.gz' if fname.endswith('.tar.gz') else os.path.splitext(fname)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        file.save(tmp.name)
+        tmp_path = tmp.name
+
+    def _run():
+        try:
+            update_app_from_archive(safe_name, tmp_path)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    threading.Thread(
+        target=_run, daemon=True,
+        name=f"app-archive-update-{safe_name}"
+    ).start()
     return redirect(url_for('main.app_update_progress', name=safe_name))
 
 

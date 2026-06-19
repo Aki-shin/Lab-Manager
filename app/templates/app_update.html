@@ -91,6 +91,32 @@
 
     {% endif %}
 
+    {# --- Альтернатива: обновление из архива --- #}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-dark text-light">Обновление из архива</div>
+      <div class="card-body">
+        <p class="small text-muted">
+          Загрузите ZIP/TAR с новой версией кода —
+          {% if version.is_git %}альтернатива git-обновлению.{% else %}актуально для приложений без git.{% endif %}
+          Файлы, имена которых есть в архиве, будут заменены;
+          файлы локально (БД, логи, <code>venv</code>, данные, которых в архиве нет) —
+          <b>не трогаются</b>. При сбое — автооткат к предыдущему состоянию.
+        </p>
+        <form action="{{ url_for('main.app_update_from_archive', name=name) }}"
+              method="post" enctype="multipart/form-data"
+              onsubmit="return confirm('Обновить приложение из архива? При поломке будет выполнен автооткат.');">
+          <div class="input-group">
+            <input type="file" name="archive" class="form-control"
+                   accept=".zip,.tar.gz,.tgz,.tar" required>
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-arrow-up-circle"></i> Загрузить и обновить
+            </button>
+          </div>
+          <div class="form-text small mt-1">.zip, .tar.gz, .tgz, .tar</div>
+        </form>
+      </div>
+    </div>
+
     <a href="{{ url_for('main.app_detail', name=name) }}" class="btn btn-secondary">
       ← Вернуться к приложению
     </a>

@@ -1221,6 +1221,39 @@ def is_safe_app_name(name):
     return bool(name) and bool(SAFE_NAME_RE.match(name)) and not name.startswith('.')
 
 
+def _safe_extract_archive(archive_path, target_dir, flatten=False):
+    """
+    Безопасно распаковывает архив в target_dir (с защитой от Zip Slip).
+    Не проверяет, существует ли target_dir — это решает вызывающий код.
+    Возвращает (ok, message).
+    """
+    os.makedirs(target_dir, exist_ok=True)
+    target_real = os.path.realpath(target_dir)
+    try:
+        if archive_path.endswith('.zip'):
+            with zipfile.ZipFile(archive_path, 'r') as z:
+                for member in z.namelist():
+                    dest = os.path.realpath(os.path.join(target_dir, member))
+                    if not dest.startswith(target_real + os.sep) and dest != target_real:
+                        raise ValueError(f"Zip Slip: {member}")
+                z.extractall(target_dir)
+        elif archive_path.endswith(('.tar.gz', '.tgz', '.tar')):
+            mode = 'r:gz' if archive_path.endswith(('.tar.gz', '.tgz')) else 'r:'
+            with tarfile.open(archive_path, mode) as t:
+                for member in t.getmembers():
+                    dest = os.path.realpath(os.path.join(target_dir, member.name))
+                    if not dest.startswith(target_real + os.sep) and dest != target_real:
+                        raise ValueError(f"Tar Slip: {member.name}")
+                t.extractall(target_dir)
+        else:
+            return False, "Поддерживаются только .zip, .tar.gz, .tgz, .tar"
+        if flatten:
+            _flatten_single_root(target_dir)
+        return True, "Распаковано"
+    except Exception as e:
+        return False, f"Ошибка распаковки: {e}"
+
+
 def extract_archive(archive_path, name):
     """
     Распаковывает zip/tar.gz в APPS_DIR/name.
@@ -1233,36 +1266,148 @@ def extract_archive(archive_path, name):
     if os.path.exists(target):
         return False, f"Директория {target} уже существует"
 
-    os.makedirs(target, exist_ok=True)
-    target_real = os.path.realpath(target)
-
-    try:
-        if archive_path.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as z:
-                for member in z.namelist():
-                    dest = os.path.realpath(os.path.join(target, member))
-                    if not dest.startswith(target_real + os.sep) and dest != target_real:
-                        raise ValueError(f"Zip Slip: {member}")
-                z.extractall(target)
-        elif archive_path.endswith(('.tar.gz', '.tgz', '.tar')):
-            mode = 'r:gz' if archive_path.endswith(('.tar.gz', '.tgz')) else 'r:'
-            with tarfile.open(archive_path, mode) as t:
-                for member in t.getmembers():
-                    dest = os.path.realpath(os.path.join(target, member.name))
-                    if not dest.startswith(target_real + os.sep) and dest != target_real:
-                        raise ValueError(f"Tar Slip: {member.name}")
-                t.extractall(target)
-        else:
-            return False, "Поддерживаются только .zip, .tar.gz, .tgz"
-
-        # Если архив содержит один корневой каталог — поднимаем содержимое
-        _flatten_single_root(target)
-
-        return True, f"Распаковано в {target}"
-    except Exception as e:
-        # Откатываем при ошибке
+    ok, msg = _safe_extract_archive(archive_path, target, flatten=True)
+    if not ok:
         shutil.rmtree(target, ignore_errors=True)
-        return False, f"Ошибка распаковки: {e}"
+        return False, msg
+    return True, f"Распаковано в {target}"
+
+
+def update_app_from_archive(name, archive_path):
+    """
+    Заменяет код приложения содержимым архива с автооткатом.
+
+    Логика бэкапа: перезаписываются только те файлы, имена которых есть
+    в архиве. Файлы локально (БД, логи, venv, рантайм-данные),
+    которых в архиве нет, — НЕ ТРОГАЕМ. При сбое после healthcheck
+    выполняется откат: восстановление старых версий, удаление файлов,
+    которых в старой версии не было, пересборка venv, перезапуск.
+
+    Возвращает (ok, message, report). report заполняется только при сбое.
+    """
+    _app_status_set(name, "starting", "Подготовка к обновлению из архива")
+    app_path = os.path.join(Config.APPS_DIR, name)
+    if not os.path.isdir(app_path):
+        _app_status_set(name, "failed",
+                        f"Папка приложения {app_path} не найдена", ok=False)
+        return False, "Папка приложения не найдена", None
+
+    # 1. Распаковываем во временную директорию
+    _app_status_set(name, "extracting", "Распаковка архива")
+    temp_extract = tempfile.mkdtemp(prefix=f"appup-{name}-")
+    ok, msg = _safe_extract_archive(archive_path, temp_extract, flatten=True)
+    if not ok:
+        shutil.rmtree(temp_extract, ignore_errors=True)
+        _app_status_set(name, "failed", f"Архив: {msg}", ok=False)
+        return False, f"Не удалось распаковать: {msg}", None
+
+    # 2. Собираем относительные пути файлов из архива (без venv/)
+    archive_files = []
+    for root, _dirs, files in os.walk(temp_extract):
+        rel_root = os.path.relpath(root, temp_extract)
+        for f in files:
+            rel = f if rel_root == "." else os.path.join(rel_root, f)
+            if rel.startswith("venv" + os.sep) or rel == "venv":
+                continue
+            archive_files.append(rel)
+
+    if not archive_files:
+        shutil.rmtree(temp_extract, ignore_errors=True)
+        _app_status_set(name, "failed",
+                        "Архив пустой (или содержит только venv)", ok=False)
+        return False, "Архив не содержит файлов для обновления", None
+
+    # 3. Бэкап старых версий файлов, которые архив будет переписывать
+    backup_dir = tempfile.mkdtemp(prefix=f"appbk-{name}-")
+    for rel in archive_files:
+        old_path = os.path.join(app_path, rel)
+        if os.path.exists(old_path):
+            bk = os.path.join(backup_dir, rel)
+            try:
+                os.makedirs(os.path.dirname(bk), exist_ok=True)
+                shutil.copy2(old_path, bk)
+            except Exception:
+                pass
+
+    # 4. Копируем новые файлы в app_path
+    for rel in archive_files:
+        src = os.path.join(temp_extract, rel)
+        dst = os.path.join(app_path, rel)
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+        except Exception:
+            pass
+
+    shutil.rmtree(temp_extract, ignore_errors=True)
+
+    # 5. venv и зависимости
+    _app_status_set(name, "installing",
+                    "Установка зависимостей (venv + pip)")
+    setup_ok, setup_msg = setup_app_environment(name)
+
+    # 6. Перезапуск сервиса (если есть)
+    if not os.path.exists(_service_path(name)):
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        _app_status_set(name, "done",
+                        f"Код обновлён из архива ({setup_msg}). "
+                        f"Сервис не создан — проверка работоспособности пропущена.",
+                        ok=True)
+        return True, (f"Код обновлён из архива ({setup_msg}). "
+                      f"Сервис не создан."), None
+
+    _app_status_set(name, "restarting", "Перезапуск сервиса")
+    control_service(name, "restart")
+
+    # 7. Проверка работоспособности
+    _app_status_set(name, "healthcheck",
+                    "Проверка работоспособности (до 20 секунд)")
+    healthy, reason = _wait_app_healthy(name)
+    if healthy:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        _app_status_set(name, "done",
+                        f"Приложение обновлено из архива и работает штатно. "
+                        f"{setup_msg}.",
+                        ok=True)
+        return True, (f"Приложение обновлено из архива и работает штатно. "
+                      f"{setup_msg}."), None
+
+    # 8. Автооткат
+    _app_status_set(name, "rollback",
+                    f"Откат файлов ({reason})", reason=reason)
+    crash_logs = get_app_logs(name, lines=120)
+    for rel in archive_files:
+        bk_path = os.path.join(backup_dir, rel)
+        live_path = os.path.join(app_path, rel)
+        if os.path.exists(bk_path):
+            try:
+                shutil.copy2(bk_path, live_path)
+            except Exception:
+                pass
+        else:
+            # Файла не было до обновления — удаляем
+            try:
+                if os.path.isfile(live_path):
+                    os.remove(live_path)
+            except Exception:
+                pass
+    shutil.rmtree(backup_dir, ignore_errors=True)
+    setup_app_environment(name)
+    control_service(name, "restart")
+
+    report = {
+        "failed_commit": None,
+        "rolled_back_to": "архив отменён",
+        "reason": reason,
+        "setup_msg": setup_msg,
+        "logs": crash_logs,
+    }
+    msg = (f"Обновление из архива сломало приложение ({reason}). "
+           f"Выполнен автооткат файлов.")
+    _app_status_set(name, "failed", msg, ok=False,
+                    reason=reason,
+                    logs=crash_logs[-4000:])
+    return False, msg, report
 
 
 def _flatten_single_root(target):
