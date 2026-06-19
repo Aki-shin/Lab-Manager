@@ -1285,6 +1285,17 @@ def update_app_from_archive(name, archive_path):
 
     Возвращает (ok, message, report). report заполняется только при сбое.
     """
+    try:
+        return _do_update_app_from_archive(name, archive_path)
+    except Exception as e:
+        # Любая неожиданная ошибка в фоне → видна на прогресс-странице,
+        # иначе пользователь увидит «бесконечный extracting».
+        _app_status_set(name, "failed",
+                        f"Критическая ошибка апдейтера: {e}", ok=False)
+        return False, f"Критическая ошибка: {e}", None
+
+
+def _do_update_app_from_archive(name, archive_path):
     _app_status_set(name, "starting", "Подготовка к обновлению из архива")
     app_path = os.path.join(Config.APPS_DIR, name)
     if not os.path.isdir(app_path):
@@ -1293,7 +1304,7 @@ def update_app_from_archive(name, archive_path):
         return False, "Папка приложения не найдена", None
 
     # 1. Распаковываем во временную директорию
-    _app_status_set(name, "extracting", "Распаковка архива")
+    _app_status_set(name, "extracting", "Распаковка архива во временную папку")
     temp_extract = tempfile.mkdtemp(prefix=f"appup-{name}-")
     ok, msg = _safe_extract_archive(archive_path, temp_extract, flatten=True)
     if not ok:
@@ -1301,7 +1312,9 @@ def update_app_from_archive(name, archive_path):
         _app_status_set(name, "failed", f"Архив: {msg}", ok=False)
         return False, f"Не удалось распаковать: {msg}", None
 
-    # 2. Собираем относительные пути файлов из архива (без venv/)
+    # 2. Собираем относительные пути файлов из архива (только обычные файлы,
+    #    без venv/, без FIFO/сокетов/устройств — иначе copy может зависнуть)
+    _app_status_set(name, "extracting", "Сбор списка файлов архива")
     archive_files = []
     for root, _dirs, files in os.walk(temp_extract):
         rel_root = os.path.relpath(root, temp_extract)
@@ -1309,19 +1322,29 @@ def update_app_from_archive(name, archive_path):
             rel = f if rel_root == "." else os.path.join(rel_root, f)
             if rel.startswith("venv" + os.sep) or rel == "venv":
                 continue
+            full = os.path.join(root, f)
+            try:
+                # пропускаем спецфайлы (FIFO, сокеты, символьные/блочные устройства)
+                if not os.path.isfile(full) or os.path.islink(full):
+                    continue
+            except Exception:
+                continue
             archive_files.append(rel)
 
     if not archive_files:
         shutil.rmtree(temp_extract, ignore_errors=True)
         _app_status_set(name, "failed",
-                        "Архив пустой (или содержит только venv)", ok=False)
+                        "Архив пустой (или содержит только venv / спецфайлы)",
+                        ok=False)
         return False, "Архив не содержит файлов для обновления", None
 
     # 3. Бэкап старых версий файлов, которые архив будет переписывать
+    _app_status_set(name, "extracting",
+                    f"Бэкап текущих файлов ({len(archive_files)} шт.)")
     backup_dir = tempfile.mkdtemp(prefix=f"appbk-{name}-")
     for rel in archive_files:
         old_path = os.path.join(app_path, rel)
-        if os.path.exists(old_path):
+        if os.path.isfile(old_path) and not os.path.islink(old_path):
             bk = os.path.join(backup_dir, rel)
             try:
                 os.makedirs(os.path.dirname(bk), exist_ok=True)
@@ -1330,6 +1353,8 @@ def update_app_from_archive(name, archive_path):
                 pass
 
     # 4. Копируем новые файлы в app_path
+    _app_status_set(name, "extracting",
+                    f"Запись новых файлов ({len(archive_files)} шт.)")
     for rel in archive_files:
         src = os.path.join(temp_extract, rel)
         dst = os.path.join(app_path, rel)
